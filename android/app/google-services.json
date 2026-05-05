@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "472899420623",
+    "firebase_url": "https://arbain-control-default-rtdb.firebaseio.com",
+    "project_id": "arbain-control",
+    "storage_bucket": "arbain-control.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:472899420623:android:de48e103367855e0c312ba",
+        "android_client_info": {
+          "package_name": "com.example.arbain_agent"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC67z7V5FfvMPIMIAta8_Ha9TmYJnph190"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:472899420623:android:6631cdb67417e9a5c312ba",
+        "android_client_info": {
+          "package_name": "com.example.arbain_control"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC67z7V5FfvMPIMIAta8_Ha9TmYJnph190"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
