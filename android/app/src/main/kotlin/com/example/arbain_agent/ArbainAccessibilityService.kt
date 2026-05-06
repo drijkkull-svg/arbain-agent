@@ -1,7 +1,13 @@
 package com.example.arbain_agent
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.AccessibilityServiceInfo
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.auth.FirebaseAuth
+import android.accessibilityservice.AccessibilityService
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.auth.FirebaseAuthInfo
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
 import com.google.firebase.firestore.FirebaseFirestore
@@ -49,3 +55,4 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
