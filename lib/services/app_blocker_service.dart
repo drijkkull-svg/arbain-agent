@@ -19,6 +19,20 @@ class AppBlockerService {
     } catch (e) {}
   }
 
+  Future<bool> hasUsageAccess() async {
+    try {
+      return await _channel.invokeMethod('hasUsageAccess') ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<void> openUsageAccessSettings() async {
+    try {
+      await _channel.invokeMethod('openUsageAccessSettings');
+    } catch (e) {}
+  }
+
   Future<void> updateBlockedApps(List<String> blockedApps) async {
     try {
       await _channel.invokeMethod('updateBlockedApps', {'blockedApps': blockedApps});
@@ -40,3 +54,4 @@ class AppBlockerService {
     });
   }
 }
+

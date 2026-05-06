@@ -22,6 +22,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _deviceAdmin = DeviceAdminService();
   final _appBlocker = AppBlockerService();
+  bool _hasUsageAccess = false;
   final _autoUpdate = AutoUpdateService();
   String _status = 'Memulai...';
   bool _isTracking = false;
@@ -38,7 +39,16 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkAdminStatus();
     _deviceAdmin.listenLockCommand();
     _appBlocker.listenBlockedApps();
+    _checkUsageAccess();
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
+  }
+
+  Future<void> _checkUsageAccess() async {
+    final hasAccess = await _appBlocker.hasUsageAccess();
+    setState(() { _hasUsageAccess = hasAccess; });
+    if (!hasAccess) {
+      await _appBlocker.openUsageAccessSettings();
+    }
   }
 
   Future<void> _checkAdminStatus() async {
@@ -238,6 +248,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
 
 
 
