@@ -10,10 +10,12 @@ class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.arbain_agent/device_admin"
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
+    private lateinit var appBlocker: AppBlockerService
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponent = ComponentName(this, ArbainDeviceAdminReceiver::class.java)
+        appBlocker = AppBlockerService(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAdminActive" -> result.success(devicePolicyManager.isAdminActive(adminComponent))
@@ -49,25 +51,19 @@ class MainActivity : FlutterActivity() {
                         result.error("ERROR", e.message, null)
                     }
                 }
-                "setPin" -> {
-                    val pin = call.argument<String>("pin") ?: "000000"
-                    try {
-                        if (devicePolicyManager.isAdminActive(adminComponent)) {
-                            devicePolicyManager.lockNow()
-                            result.success(true)
-                        } else {
-                            result.success(false)
-                        }
-                    } catch (e: Exception) {
-                        result.error("ERROR", e.message, null)
-                    }
+                "startAppBlocker" -> {
+                    val apps = call.argument<List<String>>("blockedApps") ?: listOf()
+                    appBlocker.start(apps)
+                    result.success(true)
                 }
-                "clearPin" -> {
-                    try {
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("ERROR", e.message, null)
-                    }
+                "stopAppBlocker" -> {
+                    appBlocker.stop()
+                    result.success(true)
+                }
+                "updateBlockedApps" -> {
+                    val apps = call.argument<List<String>>("blockedApps") ?: listOf()
+                    appBlocker.updateBlockedApps(apps)
+                    result.success(true)
                 }
                 else -> result.notImplemented()
             }

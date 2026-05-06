@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/device_admin_service.dart';
+import '../services/app_blocker_service.dart';
 import '../services/auto_update_service.dart';
 import 'login_screen.dart';
 import 'pairing_screen.dart';
@@ -20,6 +21,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
   final _deviceAdmin = DeviceAdminService();
+  final _appBlocker = AppBlockerService();
   final _autoUpdate = AutoUpdateService();
   String _status = 'Memulai...';
   bool _isTracking = false;
@@ -35,6 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _listenToDeviceCommands();
     _checkAdminStatus();
     _deviceAdmin.listenLockCommand();
+    _appBlocker.listenBlockedApps();
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
   }
 
@@ -235,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 
 
 
