@@ -21,8 +21,19 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     private fun loadBlockedApps() {
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val apps = prefs.getStringSet("flutter.blocked_apps", emptySet()) ?: emptySet()
-        blockedApps = apps.toMutableSet()
+        val all = prefs.all
+        val apps = mutableSetOf<String>()
+        val key = "flutter.blocked_apps"
+        val raw = prefs.getString(key, null)
+        if (raw != null) {
+            val cleaned = raw.removePrefix("[").removeSuffix("]")
+            if (cleaned.isNotEmpty()) {
+                cleaned.split(",").forEach {
+                    apps.add(it.trim().removeSurrounding(""))
+                }
+            }
+        }
+        blockedApps = apps
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
