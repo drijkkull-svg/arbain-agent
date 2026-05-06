@@ -56,14 +56,14 @@ class MainActivity : FlutterActivity() {
                     appBlocker.start(apps)
                     result.success(true)
                 }
-                "hasUsageAccess" -> {
+                "hasAccessibilityService" -> {
                     val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
                     val time = System.currentTimeMillis()
                     val stats = usageStatsManager.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, time - 1000, time)
                     result.success(stats != null && stats.isNotEmpty())
                 }
-                "openUsageAccessSettings" -> {
-                    val intent = android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                "openAccessibilitySettings" -> {
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
                     intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
                     startActivity(intent)
                     result.success(true)
@@ -74,6 +74,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "updateBlockedApps" -> {
                     val apps = call.argument<List<String>>("blockedApps") ?: listOf()
+                    ArbainAccessibilityService.blockedApps = apps
                     appBlocker.updateBlockedApps(apps)
                     result.success(true)
                 }
@@ -82,4 +83,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
+
+
+
 
