@@ -4,10 +4,14 @@ import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.ListenerRegistration
 
 class ArbainAccessibilityService : AccessibilityService() {
 
-    private var blockedApps = mutableListOf<String>()
+    private var blockedApps = mutableSetOf<String>()
+    private var firestoreListener: ListenerRegistration? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -16,10 +20,37 @@ class ArbainAccessibilityService : AccessibilityService() {
         info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
         info.notificationTimeout = 100
         serviceInfo = info
+        startListeningFirestore()
     }
 
-    fun updateBlocked(apps: List<String>) {
-        blockedApps = apps.toMutableList()
+    private fun startListeningFirestore() {
+        val auth = FirebaseAuth.getInstance()
+        val uid = auth.currentUser?.uid
+
+        if (uid == null) {
+            auth.signInAnonymously().addOnSuccessListener {
+                val newUid = auth.currentUser?.uid ?: return@addOnSuccessListener
+                listenBlockedApps(newUid)
+            }
+        } else {
+            listenBlockedApps(uid)
+        }
+    }
+
+    private fun listenBlockedApps(uid: String) {
+        val db = FirebaseFirestore.getInstance()
+        firestoreListener = db.collection("devices").document(uid)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null || snapshot == null) return@addSnapshotListener
+                val isRestricted = snapshot.getBoolean("isRestricted") ?: false
+                if (isRestricted) {
+                    @Suppress("UNCHECKED_CAST")
+                    val apps = snapshot.get("blockedApps") as? List<String> ?: emptyList()
+                    blockedApps = apps.toMutableSet()
+                } else {
+                    blockedApps = mutableSetOf()
+                }
+            }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -36,4 +67,9 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    override fun onDestroy() {
+        super.onDestroy()
+        firestoreListener?.remove()
+    }
 }
