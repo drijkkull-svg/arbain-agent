@@ -33,11 +33,26 @@ class MainActivity : FlutterActivity() {
                         result.success(false)
                     }
                 }
+                "startLockTask" -> {
+                    try {
+                        startLockTask()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "stopLockTask" -> {
+                    try {
+                        stopLockTask()
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
                 "setPin" -> {
                     val pin = call.argument<String>("pin") ?: "000000"
                     try {
                         if (devicePolicyManager.isAdminActive(adminComponent)) {
-                            devicePolicyManager.resetPassword(pin, DevicePolicyManager.RESET_PASSWORD_REQUIRE_ENTRY)
                             devicePolicyManager.lockNow()
                             result.success(true)
                         } else {
@@ -49,12 +64,7 @@ class MainActivity : FlutterActivity() {
                 }
                 "clearPin" -> {
                     try {
-                        if (devicePolicyManager.isAdminActive(adminComponent)) {
-                            devicePolicyManager.resetPassword("", 0)
-                            result.success(true)
-                        } else {
-                            result.success(false)
-                        }
+                        result.success(true)
                     } catch (e: Exception) {
                         result.error("ERROR", e.message, null)
                     }
