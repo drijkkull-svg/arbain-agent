@@ -35,7 +35,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _listenToDeviceCommands();
     _checkAdminStatus();
     _deviceAdmin.listenLockCommand();
-    WidgetsBinding.instance.addPostFrameCallback\((_\) => _autoUpdate.checkUpdate\(context\)\);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
   }
 
   Future<void> _checkAdminStatus() async {
@@ -235,4 +235,5 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 
