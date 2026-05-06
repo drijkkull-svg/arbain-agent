@@ -3,17 +3,13 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:convert';
-
 class PairingScreen extends StatefulWidget {
   const PairingScreen({super.key});
-
   @override
   State<PairingScreen> createState() => _PairingScreenState();
 }
-
 class _PairingScreenState extends State<PairingScreen> {
   bool _paired = false;
-
   void _onDetect(BarcodeCapture capture) async {
     if (_paired) return;
     final barcode = capture.barcodes.first;
@@ -25,12 +21,19 @@ class _PairingScreenState extends State<PairingScreen> {
       if (santriId == null) return;
       setState(() { _paired = true; });
       final uid = FirebaseAuth.instance.currentUser?.uid;
-      await FirebaseFirestore.instance.collection('devices').doc(uid).set({
+      final firestore = FirebaseFirestore.instance;
+      await firestore.collection('devices').doc(uid).set({
         'santriId': santriId,
+        'deviceId': uid,
         'isOnline': true,
         'isLostMode': false,
         'isAlarmActive': false,
         'isRestricted': false,
+        'blockedApps': [],
+        'updatedAt': DateTime.now().toIso8601String(),
+      });
+      await firestore.collection('users').doc(santriId).update({
+        'deviceId': uid,
         'updatedAt': DateTime.now().toIso8601String(),
       });
       if (mounted) {
@@ -43,7 +46,6 @@ class _PairingScreenState extends State<PairingScreen> {
       setState(() { _paired = false; });
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
