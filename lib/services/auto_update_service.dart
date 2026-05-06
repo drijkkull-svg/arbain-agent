@@ -101,3 +101,4 @@ class AutoUpdateService {
     await OpenFilex.open(savePath);
   }
 }
+
