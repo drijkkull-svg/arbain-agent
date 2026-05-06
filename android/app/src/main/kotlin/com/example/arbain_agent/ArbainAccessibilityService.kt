@@ -1,5 +1,4 @@
 package com.example.arbain_agent
-
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
@@ -21,8 +20,8 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     private fun loadBlockedApps() {
-        val prefs = getSharedPreferences("arbain_prefs", Context.MODE_PRIVATE)
-        val apps = prefs.getStringSet("blocked_apps", emptySet()) ?: emptySet()
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val apps = prefs.getStringSet("flutter.blocked_apps", emptySet()) ?: emptySet()
         blockedApps = apps.toMutableSet()
     }
 
