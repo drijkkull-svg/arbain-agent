@@ -29,6 +29,8 @@ class _PairingScreenState extends State<PairingScreen> {
         'isLostMode': false,
         'isAlarmActive': false,
         'isRestricted': false,
+        'deviceName': 'HP Santri',
+        'blockedApps': [],
         'blockedApps': [],
         'updatedAt': DateTime.now().toIso8601String(),
       });
@@ -74,3 +76,4 @@ class _PairingScreenState extends State<PairingScreen> {
     );
   }
 }
+
