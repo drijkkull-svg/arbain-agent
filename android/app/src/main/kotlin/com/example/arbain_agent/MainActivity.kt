@@ -1,5 +1,4 @@
 package com.example.arbain_agent
-
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -7,17 +6,14 @@ import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
-
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.arbain_agent/device_admin"
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
-
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponent = ComponentName(this, ArbainDeviceAdminReceiver::class.java)
-
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAdminActive" -> result.success(devicePolicyManager.isAdminActive(adminComponent))
@@ -35,6 +31,32 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     } else {
                         result.success(false)
+                    }
+                }
+                "setPin" -> {
+                    val pin = call.argument<String>("pin") ?: "000000"
+                    try {
+                        if (devicePolicyManager.isAdminActive(adminComponent)) {
+                            devicePolicyManager.resetPassword(pin, DevicePolicyManager.RESET_PASSWORD_REQUIRE_ENTRY)
+                            devicePolicyManager.lockNow()
+                            result.success(true)
+                        } else {
+                            result.success(false)
+                        }
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "clearPin" -> {
+                    try {
+                        if (devicePolicyManager.isAdminActive(adminComponent)) {
+                            devicePolicyManager.resetPassword("", 0)
+                            result.success(true)
+                        } else {
+                            result.success(false)
+                        }
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
                     }
                 }
                 else -> result.notImplemented()
