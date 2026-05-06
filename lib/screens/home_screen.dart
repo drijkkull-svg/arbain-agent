@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import '../services/device_admin_service.dart';
 import 'login_screen.dart';
 import 'pairing_screen.dart';
 import 'apps_screen.dart';
@@ -17,17 +18,31 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
+  final _deviceAdmin = DeviceAdminService();
   String _status = 'Memulai...';
   bool _isTracking = false;
   bool _isRestricted = false;
   bool _isAlarmActive = false;
   bool _isLostMode = false;
+  bool _isAdminActive = false;
 
   @override
   void initState() {
     super.initState();
     _startTracking();
     _listenToDeviceCommands();
+    _checkAdminStatus();
+    _deviceAdmin.listenLockCommand();
+  }
+
+  Future<void> _checkAdminStatus() async {
+    final active = await _deviceAdmin.isAdminActive();
+    setState(() { _isAdminActive = active; });
+    if (!active) {
+      await _deviceAdmin.requestAdminPermission();
+      final activeAfter = await _deviceAdmin.isAdminActive();
+      setState(() { _isAdminActive = activeAfter; });
+    }
   }
 
   void _listenToDeviceCommands() {
@@ -43,6 +58,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       if (data['isRestricted'] == true) {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+        _deviceAdmin.lockScreen();
       } else {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       }
@@ -157,6 +173,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     )),
                     const SizedBox(width: 8),
                     Text(_status, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  ]),
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Icon(Icons.admin_panel_settings, color: _isAdminActive ? const Color(0xFF00FF88) : Colors.red, size: 16),
+                    const SizedBox(width: 8),
+                    Text(_isAdminActive ? 'Device Admin Aktif' : 'Device Admin Tidak Aktif', style: TextStyle(color: _isAdminActive ? const Color(0xFF00FF88) : Colors.red, fontSize: 12)),
                   ]),
                 ],
               ),
