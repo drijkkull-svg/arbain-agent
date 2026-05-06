@@ -16,6 +16,8 @@ class MainActivity : FlutterActivity() {
         devicePolicyManager = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         adminComponent = ComponentName(this, ArbainDeviceAdminReceiver::class.java)
         appBlocker = AppBlockerService(this)
+        val serviceIntent = android.content.Intent(this, ArbainForegroundService::class.java)
+        startForegroundService(serviceIntent)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
             when (call.method) {
                 "isAdminActive" -> result.success(devicePolicyManager.isAdminActive(adminComponent))
@@ -82,6 +84,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
+
 
 
 
