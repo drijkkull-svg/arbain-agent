@@ -74,7 +74,6 @@ class MainActivity : FlutterActivity() {
                 }
                 "updateBlockedApps" -> {
                     val apps = call.argument<List<String>>("blockedApps") ?: listOf()
-                    ArbainAccessibilityService.blockedApps = apps
                     appBlocker.updateBlockedApps(apps)
                     result.success(true)
                 }
@@ -83,6 +82,7 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
+
 
 
 

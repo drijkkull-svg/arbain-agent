@@ -1,43 +1,25 @@
 package com.example.arbain_agent
 
 import android.accessibilityservice.AccessibilityService
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.auth.FirebaseAuth
-import android.accessibilityservice.AccessibilityService
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.DocumentSnapshot
-import com.google.firebase.auth.FirebaseAuthInfo
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.view.accessibility.AccessibilityEvent
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.auth.FirebaseAuth
 
 class ArbainAccessibilityService : AccessibilityService() {
 
-    private var blockedApps = listOf<String>()
+    private var blockedApps = mutableListOf<String>()
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        val info = AccessibilityServiceInfo().apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 100
-        }
+        val info = AccessibilityServiceInfo()
+        info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        info.feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
+        info.notificationTimeout = 100
         serviceInfo = info
-        listenToFirebase()
     }
 
-    private fun listenToFirebase() {
-        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return
-        FirebaseFirestore.getInstance()
-            .collection("devices")
-            .document(uid)
-            .addSnapshotListener { snap, _ ->
-                if (snap != null && snap.exists()) {
-                    blockedApps = snap.get("blockedApps") as? List<String> ?: listOf()
-                }
-            }
+    fun updateBlocked(apps: List<String>) {
+        blockedApps = apps.toMutableList()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -55,4 +37,3 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
-
