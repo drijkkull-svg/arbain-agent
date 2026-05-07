@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -134,11 +135,20 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.lock, color: Colors.red, size: 80),
+                const Text('PONDOK PESANTREN', style: TextStyle(color: Color(0xFF00FF88), fontSize: 14, letterSpacing: 2)),
+                  const Text("Al-Mubarok Al-Arba'in", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 24),
+                  const Icon(Icons.lock, color: Colors.red, size: 80),
                 const SizedBox(height: 24),
                 const Text('PERANGKAT DIBATASI', style: TextStyle(color: Colors.red, fontSize: 24, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 const Text('Hubungi pengurus pondok untuk membuka akses.', style: TextStyle(color: Colors.white54), textAlign: TextAlign.center),
+                  const SizedBox(height: 32),
+                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    IconButton(icon: const Icon(Icons.phone, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('tel:'))),
+                    const SizedBox(width: 40),
+                    IconButton(icon: const Icon(Icons.camera_alt, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('market://launch?id=com.android.camera2'))),
+                  ]),
               ],
             ),
           ),
@@ -261,6 +271,11 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
+
+
+
 
 
 
