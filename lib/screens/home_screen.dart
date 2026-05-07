@@ -79,8 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isRestricted = data['isRestricted'] ?? false;
         _saveRestrictedState(data['isRestricted'] ?? false);
-        final prefs2 = await SharedPreferences.getInstance();
-        setState(() { _isSleep = prefs2.getBool('is_sleep') ?? false; });
+        SharedPreferences.getInstance().then((prefs2) => setState(() { _isSleep = prefs2.getBool('is_sleep') ?? false; }));
         _isAlarmActive = data['isAlarmActive'] ?? false;
         _isLostMode = data['isLostMode'] ?? false;
       });
@@ -274,6 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 
 
 
