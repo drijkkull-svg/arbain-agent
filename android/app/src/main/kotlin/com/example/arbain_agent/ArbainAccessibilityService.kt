@@ -32,7 +32,7 @@ class ArbainAccessibilityService : AccessibilityService() {
         blockedApps = apps
     }
 
-    private fun isRestricted(): Boolean {
+    private fun checkIsRestricted(): Boolean {
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         return prefs.getBoolean("flutter.is_restricted", false)
     }
@@ -41,7 +41,7 @@ class ArbainAccessibilityService : AccessibilityService() {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
-        if (isRestricted()) {
+        if (checkIsRestricted()) {
             val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
             intent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
             startActivity(intent)
@@ -59,3 +59,4 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
