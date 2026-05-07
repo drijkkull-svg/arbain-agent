@@ -65,6 +65,8 @@ class _HomeScreenState extends State<HomeScreen> {
   void _listenToDeviceCommands() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('device_uid', uid);
     _firestore.collection('devices').doc(uid).snapshots().listen((snap) {
       if (!snap.exists) return;
       final data = snap.data()!;
@@ -255,6 +257,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 
 
 
