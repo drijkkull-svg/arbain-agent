@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -69,6 +70,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final data = snap.data()!;
       setState(() {
         _isRestricted = data['isRestricted'] ?? false;
+        _saveRestrictedState(data['isRestricted'] ?? false);
         _isAlarmActive = data['isAlarmActive'] ?? false;
         _isLostMode = data['isLostMode'] ?? false;
       });
@@ -102,6 +104,11 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       setState(() { _status = 'Error: $e'; });
     }
+  }
+
+  Future<void> _saveRestrictedState(bool isRestricted) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_restricted', isRestricted);
   }
 
   Future<void> _logout() async {
@@ -248,6 +255,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
+
 
 
 
