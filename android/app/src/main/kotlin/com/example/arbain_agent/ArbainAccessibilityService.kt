@@ -146,7 +146,14 @@ class ArbainAccessibilityService : AccessibilityService() {
                         if (inSchedule) { shouldRestrict = true; break }
                     }
                     val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                    if (shouldRestrict) prefs.edit().putBoolean("flutter.is_restricted", true).apply()
+                    val currentRestricted = prefs.getBoolean("flutter.is_restricted", false)
+                    if (shouldRestrict) {
+                        prefs.edit().putBoolean("flutter.is_sleep", true).apply()
+                        prefs.edit().putBoolean("flutter.is_restricted", true).apply()
+                    } else {
+                        prefs.edit().putBoolean("flutter.is_sleep", false).apply()
+                        if (!currentRestricted) prefs.edit().putBoolean("flutter.is_restricted", false).apply()
+                    }
                 }
                 conn.disconnect()
             } catch (e: Exception) { }
@@ -155,6 +162,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 

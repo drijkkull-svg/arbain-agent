@@ -31,6 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _status = 'Memulai...';
   bool _isTracking = false;
   bool _isRestricted = false;
+  bool _isSleep = false;
   bool _isAlarmActive = false;
   bool _isLostMode = false;
   bool _isAdminActive = false;
@@ -78,6 +79,8 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _isRestricted = data['isRestricted'] ?? false;
         _saveRestrictedState(data['isRestricted'] ?? false);
+        final prefs2 = await SharedPreferences.getInstance();
+        setState(() { _isSleep = prefs2.getBool('is_sleep') ?? false; });
         _isAlarmActive = data['isAlarmActive'] ?? false;
         _isLostMode = data['isLostMode'] ?? false;
       });
@@ -140,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 24),
                   const Icon(Icons.lock, color: Colors.red, size: 80),
                 const SizedBox(height: 24),
-                const Text('PERANGKAT DIBATASI', style: TextStyle(color: Colors.red, fontSize: 24, fontWeight: FontWeight.bold)),
+                Text(_isSleep ? 'WAKTU ISTIRAHAT' : 'PERANGKAT DIBATASI', style: TextStyle(color: _isSleep ? Colors.blue : Colors.red, fontSize: 24, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 const Text('Hubungi pengurus pondok untuk membuka akses.', style: TextStyle(color: Colors.white54), textAlign: TextAlign.center),
                   const SizedBox(height: 32),
@@ -271,6 +274,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
+
+
 
 
 
