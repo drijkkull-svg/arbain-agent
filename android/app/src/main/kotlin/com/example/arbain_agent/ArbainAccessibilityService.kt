@@ -110,11 +110,8 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
     }
 
-    override fun onServiceDisconnected() {
-        handler.removeCallbacks(pollRunnable)
-    }
-
     override fun onInterrupt() {}
 }
+
 
 
