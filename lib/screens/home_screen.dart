@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/device_admin_service.dart';
 import '../services/app_blocker_service.dart';
+import '../services/schedule_service.dart';
 import '../services/auto_update_service.dart';
 import 'login_screen.dart';
 import 'pairing_screen.dart';
@@ -23,6 +24,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _firestore = FirebaseFirestore.instance;
   final _deviceAdmin = DeviceAdminService();
   final _appBlocker = AppBlockerService();
+  final _scheduleService = ScheduleService();
   bool _hasUsageAccess = false;
   final _autoUpdate = AutoUpdateService();
   String _status = 'Memulai...';
@@ -39,6 +41,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _listenToDeviceCommands();
     _checkAdminStatus();
     _deviceAdmin.listenLockCommand();
+    _scheduleService.startScheduleChecker((shouldRestrict) {
+      SharedPreferences.getInstance().then((prefs) => prefs.setBool('is_restricted', shouldRestrict));
+    });
     _appBlocker.listenBlockedApps();
     _checkUsageAccess();
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
@@ -256,6 +261,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
 
 
 
