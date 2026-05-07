@@ -10,6 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import org.json.JSONObject
 import kotlin.concurrent.thread
+import android.util.Log
 
 class ArbainAccessibilityService : AccessibilityService() {
 
@@ -42,7 +43,9 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     private fun pollFirestore() {
-        val uid = getDeviceUid() ?: return
+        val uid = getDeviceUid()
+        Log.d("ArbainService", "pollFirestore called, uid=$uid")
+        if (uid == null) return
         thread {
             try {
                 val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/devices/$uid?key=$API_KEY")
@@ -112,6 +115,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
