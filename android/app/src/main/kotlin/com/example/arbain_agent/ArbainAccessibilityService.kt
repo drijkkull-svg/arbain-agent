@@ -21,25 +21,32 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     private fun loadBlockedApps() {
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val all = prefs.all
+        val raw = prefs.getString("flutter.blocked_apps", null)
         val apps = mutableSetOf<String>()
-        val key = "flutter.blocked_apps"
-        val raw = prefs.getString(key, null)
         if (raw != null) {
             val cleaned = raw.removePrefix("[").removeSuffix("]")
             if (cleaned.isNotEmpty()) {
-                cleaned.split(",").forEach {
-                    apps.add(it.trim().removeSurrounding(""))
-                }
+                cleaned.split(",").forEach { apps.add(it.trim().removeSurrounding("")) }
             }
         }
         blockedApps = apps
+    }
+
+    private fun isRestricted(): Boolean {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        return prefs.getBoolean("flutter.is_restricted", false)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
+        if (isRestricted()) {
+            val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
+            intent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            startActivity(intent)
+            return
+        }
         loadBlockedApps()
         if (blockedApps.contains(packageName)) {
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
