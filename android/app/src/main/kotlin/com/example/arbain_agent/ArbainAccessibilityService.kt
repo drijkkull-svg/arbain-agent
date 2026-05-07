@@ -22,6 +22,7 @@ class ArbainAccessibilityService : AccessibilityService() {
     private val pollRunnable = object : Runnable {
         override fun run() {
             pollFirestore()
+            pollSchedules()
             handler.postDelayed(this, 30000)
         }
     }
@@ -113,8 +114,49 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun pollSchedules() {
+        thread {
+            try {
+                val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/schedules?key=$API_KEY")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().readText()
+                    val json = JSONObject(response)
+                    val docs = json.optJSONArray("documents") ?: return@thread
+                    val now = java.util.Calendar.getInstance()
+                    val currentDay = arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[now.get(java.util.Calendar.DAY_OF_WEEK) - 1]
+                    val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+                    var shouldRestrict = false
+                    for (i in 0 until docs.length()) {
+                        val fields = docs.getJSONObject(i).optJSONObject("fields") ?: continue
+                        val isActive = fields.optJSONObject("isActive")?.optBoolean("booleanValue") ?: false
+                        if (!isActive) continue
+                        val daysArr = fields.optJSONObject("days")?.optJSONObject("arrayValue")?.optJSONArray("values") ?: continue
+                        val days = mutableListOf<String>()
+                        for (j in 0 until daysArr.length()) { days.add(daysArr.getJSONObject(j).optString("stringValue")) }
+                        if (!days.contains(currentDay)) continue
+                        val startTime = fields.optJSONObject("startTime")?.optString("stringValue") ?: continue
+                        val endTime = fields.optJSONObject("endTime")?.optString("stringValue") ?: continue
+                        val startMinutes = startTime.split(":")[0].toInt() * 60 + startTime.split(":")[1].toInt()
+                        val endMinutes = endTime.split(":")[0].toInt() * 60 + endTime.split(":")[1].toInt()
+                        val inSchedule = if (startMinutes <= endMinutes) currentMinutes >= startMinutes && currentMinutes < endMinutes else currentMinutes >= startMinutes || currentMinutes < endMinutes
+                        if (inSchedule) { shouldRestrict = true; break }
+                    }
+                    val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                    if (shouldRestrict) prefs.edit().putBoolean("flutter.is_restricted", true).apply()
+                }
+                conn.disconnect()
+            } catch (e: Exception) { }
+        }
+    }
+
     override fun onInterrupt() {}
 }
+
+
 
 
 
