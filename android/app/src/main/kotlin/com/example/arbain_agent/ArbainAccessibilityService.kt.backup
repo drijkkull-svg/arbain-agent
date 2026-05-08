@@ -1,4 +1,4 @@
-﻿package com.example.arbain_agent
+package com.example.arbain_agent
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
@@ -120,35 +120,18 @@ class ArbainAccessibilityService : AccessibilityService() {
             android.view.WindowManager.LayoutParams.MATCH_PARENT,
             android.view.WindowManager.LayoutParams.MATCH_PARENT,
             android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT
         )
-        val prefs2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val santriName = prefs2.getString("flutter.username", "") ?: ""
-        val kamar = prefs2.getString("flutter.kamar", "") ?: ""
-        val now2 = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
-        val jam = String.format("%02d:%02d", now2.get(java.util.Calendar.HOUR_OF_DAY), now2.get(java.util.Calendar.MINUTE))
-        val layout = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.VERTICAL
+        val view = android.widget.TextView(this).apply {
+            text = "JAM ISTIRAHAT\n\nHP sedang dikunci oleh pengurus"
+            textSize = 28f
             gravity = android.view.Gravity.CENTER
-            setBackgroundColor(android.graphics.Color.parseColor("#080C18"))
-            setPadding(80, 0, 80, 0)
+            setBackgroundColor(android.graphics.Color.BLACK)
+            setTextColor(android.graphics.Color.WHITE)
         }
-        android.widget.TextView(this).also { v -> v.text = "\uD83C\uDF19"; v.textSize = 52f; v.gravity = android.view.Gravity.CENTER; v.setPadding(0,0,0,12); layout.addView(v) }
-        android.widget.TextView(this).also { v -> v.text = jam; v.textSize = 56f; v.setTypeface(null, android.graphics.Typeface.BOLD); v.setTextColor(android.graphics.Color.WHITE); v.gravity = android.view.Gravity.CENTER; v.setPadding(0,0,0,4); layout.addView(v) }
-        android.widget.TextView(this).also { v -> v.text = "JAM TIDUR"; v.textSize = 15f; v.setTypeface(null, android.graphics.Typeface.BOLD); v.setTextColor(android.graphics.Color.parseColor("#4ECDC4")); v.gravity = android.view.Gravity.CENTER; v.letterSpacing = 0.3f; v.setPadding(0,0,0,8); layout.addView(v) }
-        android.widget.TextView(this).also { v -> v.text = "HP sedang dikunci oleh pengurus"; v.textSize = 12f; v.setTextColor(android.graphics.Color.parseColor("#556677")); v.gravity = android.view.Gravity.CENTER; v.setPadding(0,0,0,44); layout.addView(v) }
-        android.widget.TextView(this).also { v -> v.text = "PONPES AL-MUBAROK AL-ARBA'IN"; v.textSize = 12f; v.setTypeface(null, android.graphics.Typeface.BOLD); v.setTextColor(android.graphics.Color.parseColor("#3DBDB5")); v.gravity = android.view.Gravity.CENTER; v.setPadding(0,0,0,32); layout.addView(v) }
-        if (santriName.isNotEmpty()) {
-            android.widget.TextView(this).also { v -> v.text = "NAMA SANTRI"; v.textSize = 10f; v.setTextColor(android.graphics.Color.parseColor("#334455")); v.gravity = android.view.Gravity.CENTER; v.letterSpacing = 0.2f; layout.addView(v) }
-            android.widget.TextView(this).also { v -> v.text = santriName; v.textSize = 22f; v.setTypeface(null, android.graphics.Typeface.BOLD); v.setTextColor(android.graphics.Color.WHITE); v.gravity = android.view.Gravity.CENTER; v.setPadding(0,4,0,28); layout.addView(v) }
-        }
-        if (kamar.isNotEmpty()) {
-            android.widget.TextView(this).also { v -> v.text = "KAMAR"; v.textSize = 10f; v.setTextColor(android.graphics.Color.parseColor("#334455")); v.gravity = android.view.Gravity.CENTER; v.letterSpacing = 0.2f; layout.addView(v) }
-            android.widget.TextView(this).also { v -> v.text = kamar; v.textSize = 22f; v.setTypeface(null, android.graphics.Typeface.BOLD); v.setTextColor(android.graphics.Color.WHITE); v.gravity = android.view.Gravity.CENTER; v.setPadding(0,4,0,0); layout.addView(v) }
-        }
-        android.widget.TextView(this).also { v -> v.text = "Berbasis Teknologi - Arbain Agent"; v.textSize = 10f; v.setTextColor(android.graphics.Color.parseColor("#232F3E")); v.gravity = android.view.Gravity.CENTER; layout.addView(v) }
-        handler.post { if (sleepOverlayView == null) { wm.addView(layout, params); sleepOverlayView = layout } }
+        handler.post { if (sleepOverlayView == null) { wm.addView(view, params); sleepOverlayView = view } }
     }
     private fun hideSleepOverlay() {
         val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
@@ -226,7 +209,6 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
-
 
 
 
