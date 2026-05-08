@@ -150,7 +150,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                     if (shouldRestrict) {
                         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
                         val admin = android.content.ComponentName(this, ArbainDeviceAdminReceiver::class.java)
-                        if (dpm.isAdminActive(admin)) dpm.lockNow()
+                        if (dpm.isAdminActive(admin)) handler.post { dpm.lockNow() }
                         prefs.edit().putBoolean("flutter.is_sleep", true).apply()
                         prefs.edit().putBoolean("flutter.is_restricted", true).apply()
                     } else {
@@ -165,6 +165,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
