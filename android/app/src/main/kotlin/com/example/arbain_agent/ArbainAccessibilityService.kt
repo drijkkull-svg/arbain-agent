@@ -117,6 +117,7 @@ class ArbainAccessibilityService : AccessibilityService() {
     private fun pollSchedules() {
         thread {
             try {
+                Log.d("ArbainService", "pollSchedules called")
                 val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/schedules?key=$API_KEY")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
@@ -165,6 +166,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
