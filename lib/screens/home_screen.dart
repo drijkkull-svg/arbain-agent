@@ -42,6 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _startTracking();
     _listenToDeviceCommands();
     _checkAdminStatus();
+    SharedPreferences.getInstance().then((prefs) => setState(() { _isSleep = prefs.getBool('is_sleep') ?? false; }));
     _deviceAdmin.listenLockCommand();
     _scheduleService.startScheduleChecker((shouldRestrict) {
       SharedPreferences.getInstance().then((prefs) => prefs.setBool('is_restricted', shouldRestrict));
@@ -273,6 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 
 
 
