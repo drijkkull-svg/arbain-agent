@@ -72,7 +72,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                     }
                 }
                 conn.disconnect()
-            } catch (e: Exception) { }
+            } catch (e: Exception) { Log.e("ArbainService", "pollSchedules error: ${e.message}", e) }
         }
     }
 
@@ -164,12 +164,13 @@ class ArbainAccessibilityService : AccessibilityService() {
                     }
                 }
                 conn.disconnect()
-            } catch (e: Exception) { }
+            } catch (e: Exception) { Log.e("ArbainService", "pollSchedules error: ${e.message}", e) }
         }
     }
 
     override fun onInterrupt() {}
 }
+
 
 
 
