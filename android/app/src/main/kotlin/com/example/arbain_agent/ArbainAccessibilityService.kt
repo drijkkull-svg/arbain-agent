@@ -156,7 +156,19 @@ class ArbainAccessibilityService : AccessibilityService() {
                     if (shouldRestrict) {
                         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
                         val admin = android.content.ComponentName(this, ArbainDeviceAdminReceiver::class.java)
-                        if (dpm.isAdminActive(admin)) handler.post { dpm.lockNow() }
+                        if (dpm.isAdminActive(admin)) {
+    Log.d("ArbainService", "isAdminActive=true, calling lockNow")
+    handler.post { 
+        try {
+            dpm.lockNow()
+            Log.d("ArbainService", "lockNow called successfully")
+        } catch (ex: Exception) {
+            Log.e("ArbainService", "lockNow error: ${ex.message}")
+        }
+    }
+} else {
+    Log.d("ArbainService", "isAdminActive=FALSE, cannot lock")
+}
                         prefs.edit().putBoolean("flutter.is_sleep", true).apply()
                         prefs.edit().putBoolean("flutter.is_restricted", true).apply()
                     } else {
