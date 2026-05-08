@@ -46,7 +46,7 @@
                 android:resource="@xml/accessibility_config" />
         </service>
             <service android:name=".ArbainForegroundService" android:foregroundServiceType="dataSync" android:exported="false" />
-            <receiver android:name=".ArbainDeviceAdminReceiver" android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <receiver android:name=".ArbainDeviceAdminReceiver" android:permission="android.permission.BIND_DEVICE_ADMIN" android:exported="true">
             <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
@@ -60,6 +60,7 @@
         </intent>
     </queries>
 </manifest>
+
 
 
 
