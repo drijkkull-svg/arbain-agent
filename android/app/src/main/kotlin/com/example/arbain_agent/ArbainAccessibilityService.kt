@@ -114,6 +114,26 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
     }
 
+        private fun showSleepOverlay() {
+        val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+        val params = android.view.WindowManager.LayoutParams(
+            android.view.WindowManager.LayoutParams.MATCH_PARENT,
+            android.view.WindowManager.LayoutParams.MATCH_PARENT,
+            android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        )
+        val view = android.widget.TextView(this).apply {
+            text = "JAM ISTIRAHAT\n\nHP sedang dikunci oleh pengurus"
+            textSize = 28f
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(android.graphics.Color.BLACK)
+            setTextColor(android.graphics.Color.WHITE)
+        }
+        handler.post { wm.addView(view, params) }
+    }
+
     private fun pollSchedules() {
         thread {
             try {
@@ -157,7 +177,8 @@ class ArbainAccessibilityService : AccessibilityService() {
                         val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
                         val admin = android.content.ComponentName(this, ArbainDeviceAdminReceiver::class.java)
                         if (dpm.isAdminActive(admin)) {
-    Log.d("ArbainService", "isAdminActive=true, calling lockNow")
+    showSleepOverlay()
+            Log.d("ArbainService", "isAdminActive=true, calling lockNow")
     handler.post { 
         try {
             dpm.lockNow()
@@ -183,6 +204,8 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
 
 
 
