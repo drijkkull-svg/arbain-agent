@@ -118,6 +118,8 @@ class ArbainAccessibilityService : AccessibilityService() {
         thread {
             try {
                 Log.d("ArbainService", "pollSchedules called")
+                val nowDebug = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
+                Log.d("ArbainService", "current day=${arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[nowDebug.get(java.util.Calendar.DAY_OF_WEEK)-1]}, minutes=${nowDebug.get(java.util.Calendar.HOUR_OF_DAY)*60+nowDebug.get(java.util.Calendar.MINUTE)}")
                 val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/schedules?key=$API_KEY")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "GET"
@@ -166,6 +168,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
