@@ -149,8 +149,8 @@ class ArbainAccessibilityService : AccessibilityService() {
                         val endMinutes = endTime.split(":")[0].toInt() * 60 + endTime.split(":")[1].toInt()
                         val inSchedule = if (startMinutes <= endMinutes) currentMinutes >= startMinutes && currentMinutes < endMinutes else currentMinutes >= startMinutes || currentMinutes < endMinutes
                         Log.d("ArbainService", "check: days=$days curDay=$currentDay start=$startMinutes end=$endMinutes curMin=$currentMinutes inSchedule=$inSchedule")
-
-                    }
+                        if (inSchedule) { shouldRestrict = true; break }
+                                    }
                     val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
                     val currentRestricted = prefs.getBoolean("flutter.is_restricted", false)
                     if (shouldRestrict) {
@@ -183,6 +183,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
