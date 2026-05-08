@@ -128,7 +128,9 @@ class ArbainAccessibilityService : AccessibilityService() {
                 if (conn.responseCode == 200) {
                     val response = conn.inputStream.bufferedReader().readText()
                     val json = JSONObject(response)
-                    val docs = json.optJSONArray("documents") ?: run { Log.d("ArbainService", "no documents found, response=${response.take(200)}"); return@thread }
+                    val docsKey = json.keys().asSequence().firstOrNull()
+                        Log.d("ArbainService", "json keys=$docsKey, hasDocuments=${json.has("documents")}")
+                        val docs = json.optJSONArray("documents") ?: run { Log.d("ArbainService", "no documents, response=${response.take(300)}"); return@thread }
                     val now = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
                     val currentDay = arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[now.get(java.util.Calendar.DAY_OF_WEEK) - 1]
                     val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
@@ -168,6 +170,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
