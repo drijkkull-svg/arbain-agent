@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/device_admin_service.dart';
@@ -18,7 +18,7 @@ class _SetupScreenState extends State<SetupScreen> {
   final _appBlocker = AppBlockerService();
   bool _adminOk = false;
   bool _overlayOk = false;
-  bool accessibility = await _adminChannel.invokeMethod('hasAccessibilityService') ?? false;
+  bool _accessibilityOk = false;
   bool _usageOk = false;
   bool _batteryOk = false;
   bool _checking = true;
@@ -29,23 +29,24 @@ class _SetupScreenState extends State<SetupScreen> {
   Future<void> _checkAll() async {
     if (!mounted) return;
     setState(() => _checking = true);
-    bool admin = false, overlay = false, usage = false, battery = false;
+    bool admin = false, overlay = false, accessibility = false, usage = false, battery = false;
     try { admin = await _deviceAdmin.isAdminActive(); } catch (_) {}
     try { overlay = await _permChannel.invokeMethod('hasOverlayPermission') ?? false; } catch (_) {}
+    try { accessibility = await _adminChannel.invokeMethod('hasAccessibilityService') ?? false; } catch (_) {}
     try { usage = await _appBlocker.hasUsageAccess(); } catch (_) {}
     try { battery = await _permChannel.invokeMethod('hasBatteryOptimizationExemption') ?? false; } catch (_) {}
     if (!mounted) return;
     setState(() {
       _adminOk = admin;
       _overlayOk = overlay;
-      accessibility = await _adminChannel.invokeMethod('hasAccessibilityService') ?? false;
+      _accessibilityOk = accessibility;
       _usageOk = usage;
       _batteryOk = battery;
       _checking = false;
     });
   }
 
-  bool get _allGranted => _adminOk && _overlayOk && _usageOk && _batteryOk;
+  bool get _allGranted => _adminOk && _overlayOk && _accessibilityOk && _usageOk && _batteryOk;
 
   Future<void> _requestAdmin() async {
     try { await _deviceAdmin.requestAdminPermission(); } catch (_) {}
@@ -148,4 +149,3 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 }
-
