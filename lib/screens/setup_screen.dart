@@ -36,9 +36,13 @@ class _SetupScreenState extends State<SetupScreen> {
     bool battery = false;
     try {
       overlay = await _channel.invokeMethod('hasOverlayPermission') ?? false;
+    } catch (_) { overlay = false; }
+    try {
       accessibility = await _channel.invokeMethod('hasAccessibilityPermission') ?? false;
+    } catch (_) { accessibility = false; }
+    try {
       battery = await _channel.invokeMethod('hasBatteryOptimizationExemption') ?? false;
-    } catch (_) {}
+    } catch (_) { battery = false; }
     final usage = await _appBlocker.hasUsageAccess();
     setState(() {
       _adminOk = admin;
