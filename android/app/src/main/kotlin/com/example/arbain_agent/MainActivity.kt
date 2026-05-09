@@ -38,20 +38,10 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 "startLockTask" -> {
-                    try {
-                        startLockTask()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("ERROR", e.message, null)
-                    }
+                    try { startLockTask(); result.success(true) } catch (e: Exception) { result.error("ERROR", e.message, null) }
                 }
                 "stopLockTask" -> {
-                    try {
-                        stopLockTask()
-                        result.success(true)
-                    } catch (e: Exception) {
-                        result.error("ERROR", e.message, null)
-                    }
+                    try { stopLockTask(); result.success(true) } catch (e: Exception) { result.error("ERROR", e.message, null) }
                 }
                 "startAppBlocker" -> {
                     val apps = call.argument<List<String>>("blockedApps") ?: listOf()
@@ -70,10 +60,7 @@ class MainActivity : FlutterActivity() {
                     startActivity(intent)
                     result.success(true)
                 }
-                "stopAppBlocker" -> {
-                    appBlocker.stop()
-                    result.success(true)
-                }
+                "stopAppBlocker" -> { appBlocker.stop(); result.success(true) }
                 "updateBlockedApps" -> {
                     val apps = call.argument<List<String>>("blockedApps") ?: listOf()
                     appBlocker.updateBlockedApps(apps)
@@ -82,12 +69,27 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.arbain_agent/permissions").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "hasOverlayPermission" -> result.success(android.provider.Settings.canDrawOverlays(this))
+                "openOverlaySettings" -> {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK })
+                    result.success(true)
+                }
+                "hasAccessibilityPermission" -> {
+                    val enabled = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+                    result.success(enabled.contains(packageName))
+                }
+                "hasBatteryOptimizationExemption" -> {
+                    val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+                    result.success(pm.isIgnoringBatteryOptimizations(packageName))
+                }
+                "openBatterySettings" -> {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, android.net.Uri.parse("package:$packageName")).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK })
+                    result.success(true)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 }
-
-
-
-
-
-
-

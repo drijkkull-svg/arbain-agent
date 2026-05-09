@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'firebase_options.dart';
 import 'screens/login_screen.dart';
+import 'screens/setup_screen.dart';
 import 'screens/home_screen.dart';
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
@@ -12,7 +13,6 @@ void main() async {
   );
   runApp(const ArbainAgentApp());
 }
-
 class ArbainAgentApp extends StatelessWidget {
   const ArbainAgentApp({super.key});
   @override
@@ -37,7 +37,13 @@ class ArbainAgentApp extends StatelessWidget {
             );
           }
           if (snapshot.hasData) {
-            return const HomeScreen();
+            return FutureBuilder<bool>(
+              future: SharedPreferences.getInstance().then((p) => p.getBool('setup_done') ?? false),
+              builder: (context, snap) {
+                if (snap.data == true) return const HomeScreen();
+                return const SetupScreen();
+              },
+            );
           }
           return const LoginScreen();
         },
