@@ -40,14 +40,12 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _startTracking();
     _listenToDeviceCommands();
-    _checkAdminStatus();
     SharedPreferences.getInstance().then((prefs) => setState(() { _isSleep = prefs.getBool('is_sleep') ?? false; }));
     _deviceAdmin.listenLockCommand();
     _checkAdminStatus();
     _scheduleService.startScheduleChecker((shouldRestrict) {
       SharedPreferences.getInstance().then((prefs) => prefs.setBool('is_restricted', shouldRestrict));
     });
-    _appBlocker.listenBlockedApps();
     _checkUsageAccess();
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
   }
@@ -266,6 +264,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
 
 
 

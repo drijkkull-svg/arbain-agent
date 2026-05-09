@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -39,6 +39,7 @@ class ArbainAgentApp extends StatelessWidget {
           if (snapshot.hasData) {
             return FutureBuilder<bool>(
               future: SharedPreferences.getInstance().then((p) => p.getBool('setup_done') ?? false),
+              key: const ValueKey('home_check'),
               builder: (context, snap) {
                 if (snap.data == true) return const HomeScreen();
                 return const SetupScreen();
