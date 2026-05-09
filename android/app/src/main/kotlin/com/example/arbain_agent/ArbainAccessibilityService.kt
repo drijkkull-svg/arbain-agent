@@ -16,6 +16,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     private var blockedApps = mutableSetOf<String>()
     private val handler = Handler(Looper.getMainLooper())
+    private var sleepOverlayView: android.view.View? = null
     private val PROJECT_ID = "arbain-control"
     private val API_KEY = "AIzaSyC67z7V5FfvMPIMIAta8_Ha9TmYJnph190"
 
@@ -215,7 +216,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                         prefs.edit().putBoolean("flutter.is_restricted", true).apply()
                     } else {
                         prefs.edit().putBoolean("flutter.is_sleep", false)
-                        hideSleepOverlay().apply()
+                        hideSleepOverlay()
                         if (!currentRestricted) prefs.edit().putBoolean("flutter.is_restricted", false).apply()
                     }
                 }
@@ -226,6 +227,9 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
+
 
 
 
