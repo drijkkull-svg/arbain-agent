@@ -100,7 +100,8 @@ class ArbainAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
         if (checkIsRestricted()) {
-            val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+            val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
+                    intent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     startActivity(intent)
             return
         }
@@ -153,7 +154,7 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
     private fun hideSleepOverlay() {
         val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
-        handler.post { sleepOverlayView?.let { try { wm.removeView(it) } catch (e: Exception) {} ; sleepOverlayView = null } }
+        handler.post { sleepOverlayView?.let { try { wm.removeView(it) } catch (e: Exception) {} ; sleepOverlayView = null }; val homeIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); flags = Intent.FLAG_ACTIVITY_NEW_TASK }; startActivity(homeIntent) }
     }
 
     private fun pollSchedules() {
@@ -227,6 +228,8 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
 
 
 
