@@ -132,6 +132,7 @@ class ArbainAccessibilityService : AccessibilityService() {
             orientation = android.widget.LinearLayout.VERTICAL
             gravity = android.view.Gravity.CENTER
             setBackgroundColor(android.graphics.Color.parseColor("#080C18"))
+            systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
             setPadding(80, 0, 80, 0)
         }
         android.widget.TextView(this).also { v -> v.text = "\uD83C\uDF19"; v.textSize = 52f; v.gravity = android.view.Gravity.CENTER; v.setPadding(0,0,0,12); layout.addView(v) }
@@ -226,6 +227,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 

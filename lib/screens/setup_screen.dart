@@ -18,7 +18,7 @@ class _SetupScreenState extends State<SetupScreen> {
   final _appBlocker = AppBlockerService();
   bool _adminOk = false;
   bool _overlayOk = false;
-  bool _accessibilityOk = false;
+  bool accessibility = await _adminChannel.invokeMethod('hasAccessibilityService') ?? false;
   bool _usageOk = false;
   bool _batteryOk = false;
   bool _checking = true;
@@ -38,7 +38,7 @@ class _SetupScreenState extends State<SetupScreen> {
     setState(() {
       _adminOk = admin;
       _overlayOk = overlay;
-      _accessibilityOk = false;
+      accessibility = await _adminChannel.invokeMethod('hasAccessibilityService') ?? false;
       _usageOk = usage;
       _batteryOk = battery;
       _checking = false;
@@ -148,3 +148,4 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 }
+
