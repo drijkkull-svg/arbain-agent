@@ -169,7 +169,7 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
     private fun hideSleepOverlay() {
         val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
-        handler.post { sleepOverlayView?.let { try { wm.removeView(it) } catch (e: Exception) {} ; sleepOverlayView = null }; val homeIntent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); flags = Intent.FLAG_ACTIVITY_NEW_TASK }; startActivity(homeIntent) }
+        handler.post { sleepOverlayView?.let { try { wm.removeView(it) } catch (e: Exception) {} ; sleepOverlayView = null } }
     }
 
     private fun pollSchedules() {
@@ -243,6 +243,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
