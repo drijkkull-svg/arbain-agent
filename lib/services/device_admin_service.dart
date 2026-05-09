@@ -38,12 +38,7 @@ class DeviceAdminService {
     _firestore.collection('devices').doc(uid).snapshots().listen((snap) {
       if (!snap.exists) return;
       final data = snap.data()!;
-      if (data['isRestricted'] == true) {
-        final pin = data['lockPin'] ?? '000000';
-        setPin(pin);
-      } else {
-        clearPin();
-      }
+
       if (data['lockScreen'] == true) {
         lockScreen();
         _firestore.collection('devices').doc(uid).update({'lockScreen': false});
@@ -51,5 +46,6 @@ class DeviceAdminService {
     });
   }
 }
+
 
 

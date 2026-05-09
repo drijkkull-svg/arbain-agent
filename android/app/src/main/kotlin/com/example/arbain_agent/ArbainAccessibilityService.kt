@@ -20,10 +20,15 @@ class ArbainAccessibilityService : AccessibilityService() {
     private val PROJECT_ID = "arbain-control"
     private val API_KEY = "AIzaSyC67z7V5FfvMPIMIAta8_Ha9TmYJnph190"
 
+    private var isPolling = false
     private val pollRunnable = object : Runnable {
         override fun run() {
-            pollFirestore()
-            pollSchedules()
+            if (!isPolling) {
+                isPolling = true
+                pollFirestore()
+                pollSchedules()
+                isPolling = false
+            }
             handler.postDelayed(this, 10000)
         }
     }
@@ -226,7 +231,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                     } else {
                         prefs.edit().putBoolean("flutter.is_sleep", false).apply()
                         hideSleepOverlay()
-                        if (!currentRestricted) prefs.edit().putBoolean("flutter.is_restricted", false).apply()
+                        prefs.edit().putBoolean("flutter.is_restricted", false).apply()
                     }
                 }
                 conn.disconnect()
@@ -236,6 +241,8 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
 
 
 
