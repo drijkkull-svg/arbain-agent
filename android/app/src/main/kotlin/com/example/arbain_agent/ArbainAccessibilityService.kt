@@ -98,8 +98,16 @@ class ArbainAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
-        if (packageName == applicationContext.packageName) return
-        if (checkIsRestricted()) {
+        if (packageName == applicationContext.packageName) {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("flutter.is_sleep", false)) {
+            prefs.edit().putBoolean("flutter.is_restricted", false).apply()
+        }
+        return
+    }
+        val isSleep = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE).getBoolean("flutter.is_sleep", false)
+        if (packageName.contains("launcher") || packageName.contains("home")) return
+        if (checkIsRestricted() && !isSleep) {
             val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
                     intent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
                     startActivity(intent)
@@ -228,6 +236,8 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
 
 
 
