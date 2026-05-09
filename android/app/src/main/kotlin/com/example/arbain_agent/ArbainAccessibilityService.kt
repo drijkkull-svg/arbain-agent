@@ -102,7 +102,6 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-        return
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) {
@@ -112,14 +111,7 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
         return
     }
-        val isSleep = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE).getBoolean("flutter.is_sleep", false)
         if (packageName.contains("launcher") || packageName.contains("home")) return
-        if (checkIsRestricted() && !isSleep) {
-            val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
-                    intent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                    startActivity(intent)
-            return
-        }
         loadBlockedApps()
         if (blockedApps.contains(packageName)) {
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
@@ -243,6 +235,8 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
 
 
 
