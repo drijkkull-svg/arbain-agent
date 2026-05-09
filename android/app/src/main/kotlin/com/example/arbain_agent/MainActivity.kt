@@ -49,10 +49,8 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "hasAccessibilityService" -> {
-                    val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
-                    val time = System.currentTimeMillis()
-                    val stats = usageStatsManager.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, time - 1000, time)
-                    result.success(stats != null && stats.isNotEmpty())
+                    val enabled = android.provider.Settings.Secure.getString(contentResolver, android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
+                    result.success(enabled.contains(packageName))
                 }
                 "openAccessibilitySettings" -> {
                     val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
@@ -108,4 +106,5 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
+
 
