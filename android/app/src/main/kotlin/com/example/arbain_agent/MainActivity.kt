@@ -68,7 +68,12 @@ class MainActivity : FlutterActivity() {
                     result.success(stats != null && stats.isNotEmpty())
                 }
                 "openUsageAccessSettings" -> {
-                    startActivity(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK })
+                    val intent = android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                    intent.data = android.net.Uri.parse("package:$packageName")
+                    intent.flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+                    try { startActivity(intent) } catch (e: Exception) {
+                        startActivity(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK })
+                    }
                     result.success(true)
                 }
                 "updateBlockedApps" -> {
@@ -103,3 +108,4 @@ class MainActivity : FlutterActivity() {
         }
     }
 }
+
