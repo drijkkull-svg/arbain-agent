@@ -215,7 +215,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                         prefs.edit().putBoolean("flutter.is_sleep", true).apply()
                         prefs.edit().putBoolean("flutter.is_restricted", true).apply()
                     } else {
-                        prefs.edit().putBoolean("flutter.is_sleep", false)
+                        prefs.edit().putBoolean("flutter.is_sleep", false).apply()
                         hideSleepOverlay()
                         if (!currentRestricted) prefs.edit().putBoolean("flutter.is_restricted", false).apply()
                     }
@@ -227,6 +227,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
