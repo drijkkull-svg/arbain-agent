@@ -172,7 +172,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                     val json = JSONObject(response)
                     val docsKey = json.keys().asSequence().firstOrNull()
                         Log.d("ArbainService", "json keys=$docsKey, hasDocuments=${json.has("documents")}")
-                        val docs = json.optJSONArray("documents") ?: run { Log.d("ArbainService", "no documents, response=${response.take(300)}"); return@thread }
+                        val docs = json.optJSONArray("documents") ?: run { Log.d("ArbainService", "no documents"); hideSleepOverlay(); val prefs2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE); prefs2.edit().putBoolean("flutter.is_sleep", false).apply(); prefs2.edit().putBoolean("flutter.is_restricted", false).apply(); return@thread }
                     val now = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
                     val currentDay = arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[now.get(java.util.Calendar.DAY_OF_WEEK) - 1]
                     val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
@@ -227,6 +227,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
