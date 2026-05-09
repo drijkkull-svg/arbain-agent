@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
@@ -56,9 +56,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _checkUsageAccess() async {
     final hasAccess = await _appBlocker.hasUsageAccess();
     setState(() { _hasUsageAccess = hasAccess; });
-    if (!hasAccess) {
-      await _appBlocker.openUsageAccessSettings();
-    }
+    // usage access handled in setup screen
   }
 
   Future<void> _checkAdminStatus() async {
@@ -275,6 +273,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 
 
 
