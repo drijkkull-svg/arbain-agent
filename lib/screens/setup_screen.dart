@@ -37,9 +37,7 @@ class _SetupScreenState extends State<SetupScreen> {
     try {
       overlay = await _channel.invokeMethod('hasOverlayPermission') ?? false;
     } catch (_) { overlay = false; }
-    try {
-      accessibility = await _channel.invokeMethod('hasAccessibilityPermission') ?? false;
-    } catch (_) { accessibility = false; }
+    accessibility = false; // selalu tampilkan tombol izinkan
     try {
       battery = await _channel.invokeMethod('hasBatteryOptimizationExemption') ?? false;
     } catch (_) { battery = false; }
@@ -179,3 +177,5 @@ class _SetupScreenState extends State<SetupScreen> {
     );
   }
 }
+
+
