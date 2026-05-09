@@ -100,9 +100,8 @@ class ArbainAccessibilityService : AccessibilityService() {
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) return
         if (checkIsRestricted()) {
-            val intent = packageManager.getLaunchIntentForPackage(applicationContext.packageName)
-            intent?.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            startActivity(intent)
+            val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_HOME); flags = Intent.FLAG_ACTIVITY_NEW_TASK }
+                    startActivity(intent)
             return
         }
         loadBlockedApps()
@@ -227,6 +226,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
