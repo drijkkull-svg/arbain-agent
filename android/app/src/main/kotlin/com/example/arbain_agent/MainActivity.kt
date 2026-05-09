@@ -1,4 +1,4 @@
-package com.example.arbain_agent
+﻿package com.example.arbain_agent
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -61,6 +61,16 @@ class MainActivity : FlutterActivity() {
                     result.success(true)
                 }
                 "stopAppBlocker" -> { appBlocker.stop(); result.success(true) }
+                "hasUsageAccess" -> {
+                    val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+                    val time = System.currentTimeMillis()
+                    val stats = usageStatsManager.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, time - 1000, time)
+                    result.success(stats != null && stats.isNotEmpty())
+                }
+                "openUsageAccessSettings" -> {
+                    startActivity(android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK })
+                    result.success(true)
+                }
                 "updateBlockedApps" -> {
                     val apps = call.argument<List<String>>("blockedApps") ?: listOf()
                     appBlocker.updateBlockedApps(apps)
