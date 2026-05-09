@@ -36,17 +36,7 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-            <service
-            android:name=".ArbainAccessibilityService"
-            android:exported="true"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_config" />
-        </service>
+            
             <service android:name=".ArbainForegroundService" android:foregroundServiceType="dataSync" android:exported="false" />
             <receiver android:name=".ArbainDeviceAdminReceiver" android:permission="android.permission.BIND_DEVICE_ADMIN" android:exported="true">
             <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
@@ -62,6 +52,7 @@
         </intent>
     </queries>
 </manifest>
+
 
 
 
