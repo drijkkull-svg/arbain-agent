@@ -24,7 +24,7 @@ class ArbainAccessibilityService : AccessibilityService() {
         override fun run() {
             pollFirestore()
             pollSchedules()
-            handler.postDelayed(this, 30000)
+            handler.postDelayed(this, 10000)
         }
     }
 
@@ -227,6 +227,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
