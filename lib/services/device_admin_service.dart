@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart';
+﻿import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 class DeviceAdminService {
@@ -15,22 +15,22 @@ class DeviceAdminService {
   Future<void> requestAdminPermission() async {
     try {
       await _channel.invokeMethod('requestAdminPermission');
-    } catch (e) {}
+    } catch (e) { /* handled */ }
   }
   Future<void> lockScreen() async {
     try {
       await _channel.invokeMethod('lockScreen');
-    } catch (e) {}
+    } catch (e) { /* handled */ }
   }
   Future<void> setPin(String pin) async {
     try {
       await _channel.invokeMethod('setPin', {'pin': pin});
-    } catch (e) {}
+    } catch (e) { /* handled */ }
   }
   Future<void> clearPin() async {
     try {
       await _channel.invokeMethod('clearPin');
-    } catch (e) {}
+    } catch (e) { /* handled */ }
   }
   void listenLockCommand() {
     final uid = _auth.currentUser?.uid;
@@ -51,4 +51,5 @@ class DeviceAdminService {
     });
   }
 }
+
 

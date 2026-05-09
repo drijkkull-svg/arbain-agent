@@ -1,4 +1,4 @@
-import 'package:flutter/services.dart';
+﻿import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,11 +9,11 @@ class AppBlockerService {
   final _auth = FirebaseAuth.instance;
 
   Future<void> startBlocker(List<String> blockedApps) async {
-    try { await _channel.invokeMethod('startAppBlocker', {'blockedApps': blockedApps}); } catch (e) {}
+    try { await _channel.invokeMethod('startAppBlocker', {'blockedApps': blockedApps}); } catch (e) { /* handled */ }
   }
 
   Future<void> stopBlocker() async {
-    try { await _channel.invokeMethod('stopAppBlocker'); } catch (e) {}
+    try { await _channel.invokeMethod('stopAppBlocker'); } catch (e) { /* handled */ }
   }
 
   Future<bool> hasUsageAccess() async {
@@ -21,18 +21,18 @@ class AppBlockerService {
   }
 
   Future<void> openUsageAccessSettings() async {
-    try { await _channel.invokeMethod('openUsageAccessSettings'); } catch (e) {}
+    try { await _channel.invokeMethod('openUsageAccessSettings'); } catch (e) { /* handled */ }
   }
 
   Future<void> updateBlockedApps(List<String> blockedApps) async {
-    try { await _channel.invokeMethod('updateBlockedApps', {'blockedApps': blockedApps}); } catch (e) {}
+    try { await _channel.invokeMethod('updateBlockedApps', {'blockedApps': blockedApps}); } catch (e) { /* handled */ }
   }
 
   Future<void> _saveToSharedPrefs(List<String> blockedApps) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('blocked_apps', blockedApps);
-    } catch (e) {}
+    } catch (e) { /* handled */ }
   }
 
   void listenBlockedApps() {
@@ -47,3 +47,4 @@ class AppBlockerService {
     });
   }
 }
+

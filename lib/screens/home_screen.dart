@@ -26,7 +26,6 @@ class _HomeScreenState extends State<HomeScreen> {
   final _deviceAdmin = DeviceAdminService();
   final _appBlocker = AppBlockerService();
   final _scheduleService = ScheduleService();
-  bool _hasUsageAccess = false;
   final _autoUpdate = AutoUpdateService();
   String _status = 'Memulai...';
   bool _isTracking = false;
@@ -54,9 +53,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _checkUsageAccess() async {
-    final hasAccess = await _appBlocker.hasUsageAccess();
-    setState(() { _hasUsageAccess = hasAccess; });
-    // usage access handled in setup screen
+        // usage access handled in setup screen
   }
 
   Future<void> _checkAdminStatus() async {
@@ -196,7 +193,7 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFF111111),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF00FF88).withOpacity(0.3)),
+                border: Border.all(color: const Color(0xFF00FF88).withValues(alpha: 0.3)),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -269,6 +266,9 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
+
 
 
 

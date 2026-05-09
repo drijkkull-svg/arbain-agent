@@ -1,10 +1,8 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class ScheduleService {
   final _firestore = FirebaseFirestore.instance;
-  final _auth = FirebaseAuth.instance;
   Timer? _timer;
 
   void startScheduleChecker(Function(bool) onRestrict) {
@@ -52,7 +50,7 @@ class ScheduleService {
       }
 
       onRestrict(shouldRestrict);
-    } catch (e) {}
+    } catch (e) { /* handled */ }
   }
 
   int _timeToMinutes(String time) {
@@ -65,3 +63,5 @@ class ScheduleService {
     return days[weekday - 1];
   }
 }
+
+

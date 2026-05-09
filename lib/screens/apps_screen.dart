@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:installed_apps/installed_apps.dart';
@@ -71,7 +71,7 @@ class _AppsScreenState extends State<AppsScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFF111111),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF00FF88).withOpacity(0.3)),
+                border: Border.all(color: const Color(0xFF00FF88).withValues(alpha: 0.3)),
               ),
               child: Column(
                 children: [
@@ -107,4 +107,5 @@ class _AppsScreenState extends State<AppsScreen> {
     );
   }
 }
+
 

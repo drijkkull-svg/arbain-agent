@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -30,7 +30,6 @@ class _PairingScreenState extends State<PairingScreen> {
         'isAlarmActive': false,
         'isRestricted': false,
         'deviceName': 'HP Santri',
-        'blockedApps': [],
         'blockedApps': [],
         'updatedAt': DateTime.now().toIso8601String(),
       });
@@ -76,5 +75,7 @@ class _PairingScreenState extends State<PairingScreen> {
     );
   }
 }
+
+
 
 

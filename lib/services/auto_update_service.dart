@@ -1,5 +1,4 @@
-import 'dart:io';
-import 'package:dio/dio.dart';
+﻿import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -101,4 +100,5 @@ class AutoUpdateService {
     await OpenFilex.open(savePath);
   }
 }
+
 
