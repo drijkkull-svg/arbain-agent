@@ -62,13 +62,15 @@ class _HomeScreenState extends State<HomeScreen> {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
     SharedPreferences.getInstance().then((prefs) => prefs.setString('device_uid', uid));
-    _firestore.collection('devices').doc(uid).snapshots().listen((snap) {
+    _firestore.collection('devices').doc(uid).snapshots().listen((snap) async {
       if (!snap.exists) return;
       final data = snap.data()!;
+      _saveRestrictedState(data['isRestricted'] ?? false);
+      final prefs2 = await SharedPreferences.getInstance();
+      if (!mounted) return;
       setState(() {
         _isRestricted = data['isRestricted'] ?? false;
-        _saveRestrictedState(data['isRestricted'] ?? false);
-        SharedPreferences.getInstance().then((prefs2) => setState(() { _isSleep = prefs2.getBool('is_sleep') ?? false; }));
+        _isSleep = prefs2.getBool('is_sleep') ?? false;
         _isAlarmActive = data['isAlarmActive'] ?? false;
         _isLostMode = data['isLostMode'] ?? false;
       });
@@ -84,7 +86,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _startTracking() async {
     setState(() { _status = 'Mengirim lokasi...'; _isTracking = true; });
     try {
-      LocationPermission permission = await Geolocator.requestPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+      }
       if (permission == LocationPermission.denied) {
         setState(() { _status = 'Izin lokasi ditolak.'; });
         return;
@@ -262,6 +267,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
 
 
 
