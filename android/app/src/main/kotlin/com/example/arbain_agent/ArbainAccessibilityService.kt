@@ -100,7 +100,7 @@ class ArbainAccessibilityService : AccessibilityService() {
         return prefs.getBoolean("flutter.is_restricted", false)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) { return;
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) {
@@ -241,6 +241,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
