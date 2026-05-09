@@ -62,11 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _checkAdminStatus() async {
     final active = await _deviceAdmin.isAdminActive();
     setState(() { _isAdminActive = active; });
-    if (!active) {
-      await _deviceAdmin.requestAdminPermission();
-      final activeAfter = await _deviceAdmin.isAdminActive();
-      setState(() { _isAdminActive = activeAfter; });
-    }
+    // admin request handled in setup screen
   }
 
   void _listenToDeviceCommands() {
@@ -85,7 +81,7 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       if (data['isRestricted'] == true) {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        _deviceAdmin.lockScreen();
+        // lockScreen handled by dashboard
       } else {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       }
@@ -273,6 +269,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
 
 
 
