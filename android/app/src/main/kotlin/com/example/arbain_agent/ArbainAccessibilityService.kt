@@ -34,6 +34,14 @@ class ArbainAccessibilityService : AccessibilityService() {
                 pollSchedules()
                 isPolling = false
             }
+            if (currentAppPackage.isNotEmpty() && isOverTimeLimit(currentAppPackage)) {
+                val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_HOME)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                startActivity(homeIntent)
+                Log.d("ArbainService", "Time limit exceeded for $currentAppPackage, closing!")
+            }
             handler.postDelayed(this, 3000)
         }
     }
@@ -97,6 +105,28 @@ class ArbainAccessibilityService : AccessibilityService() {
                     }
                     blockedApps = newApps
                     Log.d("ArbainService", "blockedApps updated: $newApps")
+                    if (timeLimitsObj != null) {
+                        appTimeLimits.clear()
+                        fun flattenMap(obj: org.json.JSONObject, prefix: String) {
+                            obj.keys().forEach { key ->
+                                val fullKey = if (prefix.isEmpty()) key else "$prefix.$key"
+                                val fieldObj = obj.optJSONObject(key)
+                                val innerMap = fieldObj?.optJSONObject("mapValue")?.optJSONObject("fields")
+                                if (innerMap != null) {
+                                    flattenMap(innerMap, fullKey)
+                                } else {
+                                    val minutes = when {
+                                        fieldObj?.has("integerValue") == true -> fieldObj.optString("integerValue").toIntOrNull() ?: 0
+                                        fieldObj?.has("doubleValue") == true -> fieldObj.optDouble("doubleValue").toInt()
+                                        else -> 0
+                                    }
+                                    if (minutes > 0) appTimeLimits[fullKey] = minutes
+                                }
+                            }
+                        }
+                        flattenMap(timeLimitsObj, "")
+                        Log.d("ArbainService", "appTimeLimits updated: $appTimeLimits")
+                    }
                 }
                 conn.disconnect()
             } catch (e: Exception) { Log.e("ArbainService", "pollSchedules error: ${e.message}", e) }
@@ -308,6 +338,10 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
+
+
 
 
 
