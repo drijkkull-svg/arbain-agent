@@ -34,13 +34,13 @@ class ArbainAccessibilityService : AccessibilityService() {
                 pollSchedules()
                 isPolling = false
             }
-            if (currentAppPackage.isNotEmpty() && isOverTimeLimit(currentAppPackage)) {
+            if (currentAppPackage.isNotEmpty() && (blockedApps.contains(currentAppPackage) || isOverTimeLimit(currentAppPackage))) {
                 val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 startActivity(homeIntent)
-                Log.d("ArbainService", "Time limit exceeded for $currentAppPackage, closing!")
+                Log.d("ArbainService", "App blocked or time limit exceeded for $currentAppPackage, closing!")
             }
             handler.postDelayed(this, 3000)
         }
@@ -338,6 +338,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
