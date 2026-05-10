@@ -189,7 +189,8 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     private fun isOverTimeLimit(packageName: String): Boolean {
-        val limitMinutes = appTimeLimits[packageName] ?: return false
+        val today = arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta")).get(java.util.Calendar.DAY_OF_WEEK) - 1]
+        val limitMinutes = appTimeLimits["$packageName.$today"] ?: appTimeLimits[packageName] ?: return false
         val savedMs = appUsageToday[packageName] ?: 0L
         val currentMs = if (currentAppPackage == packageName) System.currentTimeMillis() - currentAppStart else 0L
         val totalMs = savedMs + currentMs
@@ -389,6 +390,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
