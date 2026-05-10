@@ -14,7 +14,12 @@ import android.util.Log
 
 class ArbainAccessibilityService : AccessibilityService() {
 
-    private var blockedApps = mutableSetOf<String>()
+    @Volatile private var blockedApps = mutableSetOf<String>()
+    private var appTimeLimits = mutableMapOf<String, Int>()
+    private var appUsageToday = mutableMapOf<String, Long>()
+    private var currentAppStart: Long = 0L
+    private var currentAppPackage: String = ""
+    private var lastResetDay: Int = -1
     private val handler = Handler(Looper.getMainLooper())
     private var sleepOverlayView: android.view.View? = null
     private val PROJECT_ID = "arbain-control"
@@ -29,11 +34,12 @@ class ArbainAccessibilityService : AccessibilityService() {
                 pollSchedules()
                 isPolling = false
             }
-            handler.postDelayed(this, 10000)
+            handler.postDelayed(this, 3000)
         }
     }
 
     override fun onServiceConnected() {
+        Log.d("ArbainService", "onServiceConnected called!")
         super.onServiceConnected()
         val info = AccessibilityServiceInfo()
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
@@ -65,21 +71,81 @@ class ArbainAccessibilityService : AccessibilityService() {
                     val json = JSONObject(response)
                     val fields = json.optJSONObject("fields") ?: return@thread
                     val isRestricted = fields.optJSONObject("isRestricted")?.optBoolean("booleanValue") ?: false
+                    Log.d("ArbainService", "fields keys=${fields.keys().asSequence().toList()}")
                     val blockedAppsArr = fields.optJSONObject("blockedApps")?.optJSONObject("arrayValue")?.optJSONArray("values")
                     val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
                     prefs.edit().putBoolean("flutter.is_restricted", isRestricted).apply()
-                    if (blockedAppsArr != null) {
-                        val apps = mutableListOf<String>()
-                        for (i in 0 until blockedAppsArr.length()) {
-                            apps.add(blockedAppsArr.getJSONObject(i).optString("stringValue"))
+                    val timeLimitsObj = fields.optJSONObject("appTimeLimits")?.optJSONObject("mapValue")?.optJSONObject("fields")
+                    if (timeLimitsObj != null) {
+                        val map = JSONObject()
+                        timeLimitsObj.keys().forEach { key ->
+                            val fieldObj = timeLimitsObj.optJSONObject(key)
+                            val minutes = when {
+                                fieldObj?.has("integerValue") == true -> fieldObj.optString("integerValue").toIntOrNull() ?: 0
+                                fieldObj?.has("doubleValue") == true -> fieldObj.optDouble("doubleValue").toInt()
+                                else -> 0
+                            }
+                            if (minutes > 0) map.put(key, minutes)
                         }
-                        val json2 = "[" + apps.joinToString(",") { "\"$it\"" } + "]"
-                        prefs.edit().putString("flutter.blocked_apps", json2).apply()
+                        prefs.edit().putString("flutter.app_time_limits", map.toString()).apply()
                     }
+                    val newApps = mutableSetOf<String>()
+                    if (blockedAppsArr != null) {
+                        for (i in 0 until blockedAppsArr.length()) {
+                            newApps.add(blockedAppsArr.getJSONObject(i).optString("stringValue"))
+                        }
+                    }
+                    blockedApps = newApps
+                    Log.d("ArbainService", "blockedApps updated: $newApps")
                 }
                 conn.disconnect()
             } catch (e: Exception) { Log.e("ArbainService", "pollSchedules error: ${e.message}", e) }
         }
+    }
+
+    private fun loadAppTimeLimits() {
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val raw = prefs.getString("flutter.app_time_limits", null) ?: return
+        try {
+            val json = JSONObject(raw)
+            appTimeLimits.clear()
+            json.keys().forEach { key ->
+                try {
+                    appTimeLimits[key] = json.getInt(key)
+                } catch (e: Exception) {
+                    try { appTimeLimits[key] = json.getDouble(key).toInt() } catch (e2: Exception) {}
+                }
+            }
+        } catch (e: Exception) { Log.e("ArbainService", "loadAppTimeLimits error: ${e.message}") }
+    }
+
+    private fun checkAndResetDaily() {
+        val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
+        if (lastResetDay != today) {
+            appUsageToday.clear()
+            lastResetDay = today
+            Log.d("ArbainService", "Daily usage reset")
+        }
+    }
+
+    private fun trackAppUsage(packageName: String) {
+        val now = System.currentTimeMillis()
+        if (currentAppPackage.isNotEmpty() && currentAppPackage != packageName) {
+            val duration = now - currentAppStart
+            if (duration > 0) {
+                appUsageToday[currentAppPackage] = (appUsageToday[currentAppPackage] ?: 0L) + duration
+            }
+        }
+        currentAppPackage = packageName
+        currentAppStart = now
+    }
+
+    private fun isOverTimeLimit(packageName: String): Boolean {
+        val limitMinutes = appTimeLimits[packageName] ?: return false
+        val savedMs = appUsageToday[packageName] ?: 0L
+        val currentMs = if (currentAppPackage == packageName) System.currentTimeMillis() - currentAppStart else 0L
+        val totalMs = savedMs + currentMs
+        return (totalMs / 60000) >= limitMinutes
     }
 
     private fun loadBlockedApps() {
@@ -89,7 +155,7 @@ class ArbainAccessibilityService : AccessibilityService() {
         if (raw != null) {
             val cleaned = raw.removePrefix("[").removeSuffix("]")
             if (cleaned.isNotEmpty()) {
-                cleaned.split(",").forEach { apps.add(it.trim().removeSurrounding("")) }
+                cleaned.split(",").forEach { apps.add(it.trim().removeSurrounding("\"")) }
             }
         }
         blockedApps = apps
@@ -101,6 +167,7 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        Log.d("ArbainService", "onAccessibilityEvent fired! pkg=${event?.packageName}")
         if (event == null) return
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
@@ -111,9 +178,25 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
         return
     }
-        if (packageName.contains("launcher") || packageName.contains("home")) return
-        loadBlockedApps()
-        if (blockedApps.contains(packageName)) {
+        if (packageName.contains("launcher") || packageName.contains("home")) {
+            trackAppUsage("")
+            return
+        }
+        checkAndResetDaily()
+        trackAppUsage(packageName)
+        val prefs2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val raw = prefs2.getString("flutter.blocked_apps", null)
+        val apps = mutableSetOf<String>()
+        if (raw != null) {
+            val cleaned = raw.removePrefix("[").removeSuffix("]")
+            if (cleaned.isNotEmpty()) {
+                cleaned.split(",").forEach { apps.add(it.trim().removeSurrounding("\"")) }
+            }
+        }
+        blockedApps = apps
+        loadAppTimeLimits()
+        Log.d("ArbainService", "checking: pkg=$packageName, blocked=${blockedApps.contains(packageName)}, blockedList=$blockedApps")
+        if (blockedApps.contains(packageName) || isOverTimeLimit(packageName)) {
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -235,6 +318,26 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
