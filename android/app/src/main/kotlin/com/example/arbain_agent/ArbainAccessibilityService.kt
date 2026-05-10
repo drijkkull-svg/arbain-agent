@@ -184,16 +184,6 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
         checkAndResetDaily()
         trackAppUsage(packageName)
-        val prefs2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-        val raw = prefs2.getString("flutter.blocked_apps", null)
-        val apps = mutableSetOf<String>()
-        if (raw != null) {
-            val cleaned = raw.removePrefix("[").removeSuffix("]")
-            if (cleaned.isNotEmpty()) {
-                cleaned.split(",").forEach { apps.add(it.trim().removeSurrounding("\"")) }
-            }
-        }
-        blockedApps = apps
         loadAppTimeLimits()
         Log.d("ArbainService", "checking: pkg=$packageName, blocked=${blockedApps.contains(packageName)}, blockedList=$blockedApps")
         if (blockedApps.contains(packageName) || isOverTimeLimit(packageName)) {
@@ -318,6 +308,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
 
 
 
