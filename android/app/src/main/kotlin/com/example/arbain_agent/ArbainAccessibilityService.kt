@@ -40,9 +40,11 @@ class ArbainAccessibilityService : AccessibilityService() {
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             val isNgaji = prefs.getBoolean("flutter.is_ngaji", false)
             val isBrowser = BROWSER_PACKAGES.contains(currentAppPackage)
+            val browserAllowed = prefs.getBoolean("flutter.browser_allowed", false)
             val isBlocked = when {
                 isNgaji && isBrowser -> false
                 isNgaji -> blockedAppsNgaji.contains(currentAppPackage)
+                isBrowser -> !browserAllowed
                 else -> blockedApps.contains(currentAppPackage)
             }
             val shouldBlock = currentAppPackage.isNotEmpty() && (isBlocked || isOverTimeLimit(currentAppPackage))
@@ -91,8 +93,12 @@ class ArbainAccessibilityService : AccessibilityService() {
                     val json = JSONObject(response)
                     val fields = json.optJSONObject("fields") ?: return@thread
                     val isRestricted = fields.optJSONObject("isRestricted")?.optBoolean("booleanValue") ?: false
+                    val browserAllowed = fields.optJSONObject("browserAllowed")?.optBoolean("booleanValue") ?: false
                     val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("flutter.is_restricted", isRestricted).apply()
+                    prefs.edit()
+                        .putBoolean("flutter.is_restricted", isRestricted)
+                        .putBoolean("flutter.browser_allowed", browserAllowed)
+                        .apply()
                     val blockedAppsArr = fields.optJSONObject("blockedApps")?.optJSONObject("arrayValue")?.optJSONArray("values")
                     val newApps = mutableSetOf<String>()
                     if (blockedAppsArr != null) {
@@ -223,7 +229,17 @@ class ArbainAccessibilityService : AccessibilityService() {
         trackAppUsage(packageName)
         loadAppTimeLimits()
         Log.d("ArbainService", "checking: pkg=$packageName blocked=${blockedApps.contains(packageName)}")
-        if (blockedApps.contains(packageName) || isOverTimeLimit(packageName)) {
+        val prefs2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val isNgaji2 = prefs2.getBoolean("flutter.is_ngaji", false)
+        val isBrowser2 = BROWSER_PACKAGES.contains(packageName)
+        val browserAllowed2 = prefs2.getBoolean("flutter.browser_allowed", false)
+        val isBlocked2 = when {
+            isNgaji2 && isBrowser2 -> false
+            isNgaji2 -> blockedAppsNgaji.contains(packageName)
+            isBrowser2 -> !browserAllowed2
+            else -> blockedApps.contains(packageName)
+        }
+        if (isBlocked2 || isOverTimeLimit(packageName)) {
             val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_HOME)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -373,6 +389,9 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
+
 
 
 
