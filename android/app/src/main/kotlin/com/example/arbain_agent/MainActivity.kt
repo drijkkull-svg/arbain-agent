@@ -79,6 +79,16 @@ class MainActivity : FlutterActivity() {
                     appBlocker.updateBlockedApps(apps)
                     result.success(true)
                 }
+                "getAppUsageMinutesToday" -> {
+                    val pkg = call.argument<String>("packageName") ?: ""
+                    val usm = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+                    val cal = java.util.Calendar.getInstance()
+                    cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0)
+                    cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+                    val stats = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, cal.timeInMillis, System.currentTimeMillis())
+                    val minutes = ((stats?.find { it.packageName == pkg }?.totalTimeInForeground ?: 0L) / 1000 / 60).toInt()
+                    result.success(minutes)
+                }
                 else -> result.notImplemented()
             }
         }
