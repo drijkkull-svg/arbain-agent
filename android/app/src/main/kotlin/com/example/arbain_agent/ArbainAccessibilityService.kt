@@ -380,7 +380,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                     } else {
                         prefs.edit().putBoolean("flutter.is_sleep", false).apply()
                         hideSleepOverlay()
-                        prefs.edit().putBoolean("flutter.is_restricted", false).apply()
+                        // Jangan override isRestricted dari pengurus!
                     }
                 }
                 conn.disconnect()
