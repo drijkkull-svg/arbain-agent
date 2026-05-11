@@ -1,0 +1,163 @@
+import 'dart:async';
+import 'dart:math';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:flutter/services.dart';
+
+class GeofenceService {
+  static const _channel = MethodChannel('com.example.arbain_agent/device_admin');
+  final _firestore = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+  Timer? _timer;
+
+  // Hitung jarak dalam meter antara 2 koordinat (Haversine formula)
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const R = 6371000.0;
+    final dLat = _toRad(lat2 - lat1);
+    final dLon = _toRad(lon2 - lon1);
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRad(lat1)) * cos(_toRad(lat2)) * sin(dLon / 2) * sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
+  }
+
+  double _toRad(double deg) => deg * pi / 180;
+
+  Future<Position?> _getAccurateLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied) return null;
+
+      // Gunakan akurasi tinggi
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+    } catch (e) {
+      return null;
+    }
+  }
+
+  Future<bool> _isInsideArea() async {
+    try {
+      // Ambil konfigurasi area ngaji dari Firestore
+      final snap = await _firestore.collection('settings').doc('ngaji_location').get();
+      if (!snap.exists) return true; // Kalau belum dikonfigurasi, anggap aman
+
+      final data = snap.data()!;
+      final areaLat = (data['lat'] as num?)?.toDouble();
+      final areaLng = (data['lng'] as num?)?.toDouble();
+      final radius = (data['radius'] as num?)?.toDouble() ?? 50.0;
+
+      if (areaLat == null || areaLng == null) return true;
+
+      final position = await _getAccurateLocation();
+      if (position == null) return true; // Kalau gagal dapat lokasi, jangan kunci
+
+      final distance = _calculateDistance(
+        position.latitude, position.longitude,
+        areaLat, areaLng,
+      );
+
+      return distance <= radius;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  Future<bool> _isNgajiModeActive() async {
+    try {
+      final snap = await _firestore
+          .collection('schedules')
+          .where('isActive', isEqualTo: true)
+          .where('type', isEqualTo: 'ngaji')
+          .get();
+
+      if (snap.docs.isEmpty) return false;
+
+      final now = DateTime.now();
+      final currentDay = _getDayName(now.weekday);
+      final currentMinutes = now.hour * 60 + now.minute;
+
+      for (final doc in snap.docs) {
+        final data = doc.data();
+        final days = List<String>.from(data['days'] ?? []);
+        if (!days.contains(currentDay)) continue;
+
+        final startTime = data['startTime'] as String? ?? '00:00';
+        final endTime = data['endTime'] as String? ?? '00:00';
+        final startMinutes = _timeToMinutes(startTime);
+        final endMinutes = _timeToMinutes(endTime);
+
+        bool inSchedule;
+        if (startMinutes <= endMinutes) {
+          inSchedule = currentMinutes >= startMinutes && currentMinutes < endMinutes;
+        } else {
+          inSchedule = currentMinutes >= startMinutes || currentMinutes < endMinutes;
+        }
+
+        if (inSchedule) return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  String _getDayName(int weekday) {
+    const days = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu'];
+    return days[weekday - 1];
+  }
+
+  int _timeToMinutes(String time) {
+    final parts = time.split(':');
+    return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+  }
+
+  Future<void> _lockDevice() async {
+    try {
+      await _channel.invokeMethod('lockScreen');
+    } catch (e) { /* handled */ }
+  }
+
+  void startGeofenceChecker() {
+    _checkGeofence();
+    // Cek setiap 30 detik
+    _timer = Timer.periodic(const Duration(seconds: 30), (_) => _checkGeofence());
+  }
+
+  Future<void> _checkGeofence() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    final ngajiActive = await _isNgajiModeActive();
+    if (!ngajiActive) return; // Kalau bukan jam ngaji, skip
+
+    final insideArea = await _isInsideArea();
+    if (!insideArea) {
+      // Di luar area saat jam ngaji → kunci HP
+      await _lockDevice();
+
+      // Update Firestore biar pengurus tau
+      await _firestore.collection('devices').doc(uid).update({
+        'geofenceViolation': true,
+        'geofenceViolationAt': DateTime.now().toIso8601String(),
+      });
+    } else {
+      // Di dalam area, clear violation
+      await _firestore.collection('devices').doc(uid).update({
+        'geofenceViolation': false,
+      });
+    }
+  }
+
+  void stop() {
+    _timer?.cancel();
+  }
+}

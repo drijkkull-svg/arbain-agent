@@ -8,6 +8,7 @@ import 'package:geolocator/geolocator.dart';
 import '../services/device_admin_service.dart';
 import '../services/schedule_service.dart';
 import '../services/auto_update_service.dart';
+import '../services/geofence_service.dart';
 import 'login_screen.dart';
 import 'pairing_screen.dart';
 import 'apps_screen.dart';
@@ -25,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _deviceAdmin = DeviceAdminService();
   final _scheduleService = ScheduleService();
   final _autoUpdate = AutoUpdateService();
+  final _geofenceService = GeofenceService();
   String _status = 'Memulai...';
   bool _isTracking = false;
   bool _isRestricted = false;
@@ -45,7 +47,15 @@ class _HomeScreenState extends State<HomeScreen> {
       SharedPreferences.getInstance().then((prefs) => prefs.setBool('is_restricted', shouldRestrict));
     });
     _checkUsageAccess();
+    _geofenceService.startGeofenceChecker();
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
+  }
+
+  @override
+  void dispose() {
+    _geofenceService.stop();
+    _scheduleService.stop();
+    super.dispose();
   }
 
   Future<void> _checkUsageAccess() async {}
@@ -90,7 +100,9 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() { _status = 'Izin lokasi ditolak.'; });
         return;
       }
-      Position position = await Geolocator.getCurrentPosition();
+      Position position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
       final uid = _auth.currentUser?.uid;
       if (uid != null) {
         await _firestore.collection('devices').doc(uid).update({
@@ -110,7 +122,6 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setBool('is_restricted', isRestricted);
   }
 
-  // Generate kode 6 digit acak
   String _generateCode() {
     final now = DateTime.now().millisecondsSinceEpoch;
     return (now % 900000 + 100000).toString();
@@ -119,30 +130,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _requestLogout() async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
-
     final code = _generateCode();
-
-    // Simpan kode logout ke Firestore agar pengurus bisa lihat
     await _firestore.collection('logout_requests').doc(uid).set({
-      'santriId': uid,
-      'code': code,
-      'status': 'pending',
+      'santriId': uid, 'code': code, 'status': 'pending',
       'requestedAt': DateTime.now().toIso8601String(),
     });
-
-    // Kirim notifikasi ke pengurus via Firestore
     await _firestore.collection('notifications_admin').add({
-      'type': 'logout_request',
-      'santriId': uid,
-      'code': code,
+      'type': 'logout_request', 'santriId': uid, 'code': code,
       'message': 'Santri meminta izin logout. Kode akses: $code',
-      'isRead': false,
-      'timestamp': DateTime.now().toIso8601String(),
+      'isRead': false, 'timestamp': DateTime.now().toIso8601String(),
     });
-
     if (!mounted) return;
-
-    // Tampilkan dialog input kode
     final codeController = TextEditingController();
     showDialog(
       context: context,
@@ -153,10 +151,7 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Permintaan logout telah dikirim ke pengurus.\nMasukkan kode akses yang diberikan pengurus:',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
-            ),
+            const Text('Permintaan logout telah dikirim ke pengurus.\nMasukkan kode akses yang diberikan pengurus:', style: TextStyle(color: Colors.white70, fontSize: 13)),
             const SizedBox(height: 16),
             TextField(
               controller: codeController,
@@ -167,40 +162,26 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: InputDecoration(
                 counterText: '',
                 hintText: '______',
-                hintStyle: TextStyle(color: Colors.white24),
-                enabledBorder: OutlineInputBorder(
-                  borderSide: BorderSide(color: Color(0xFF00FF88).withValues(alpha: 0.5)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderSide: const BorderSide(color: Color(0xFF00FF88)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                hintStyle: const TextStyle(color: Colors.white24),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: const Color(0xFF00FF88).withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(8)),
+                focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF00FF88)), borderRadius: BorderRadius.circular(8)),
               ),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () async {
-              // Batalkan request
-              await _firestore.collection('logout_requests').doc(uid).delete();
-              if (ctx.mounted) Navigator.pop(ctx);
-            },
+            onPressed: () async { await _firestore.collection('logout_requests').doc(uid).delete(); if (ctx.mounted) Navigator.pop(ctx); },
             child: const Text('Batal', style: TextStyle(color: Colors.red)),
           ),
           ElevatedButton(
             onPressed: () async {
-              final inputCode = codeController.text.trim();
-              if (inputCode == code) {
-                // Kode benar, hapus request dan logout
+              if (codeController.text.trim() == code) {
                 await _firestore.collection('logout_requests').doc(uid).delete();
                 if (ctx.mounted) Navigator.pop(ctx);
                 await _logout();
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Kode salah!'), backgroundColor: Colors.red),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kode salah!'), backgroundColor: Colors.red));
               }
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00FF88), foregroundColor: Colors.black),
@@ -299,10 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const Text('Status Perangkat', style: TextStyle(color: Colors.white54, fontSize: 12)),
                   const SizedBox(height: 8),
                   Row(children: [
-                    Container(width: 10, height: 10, decoration: BoxDecoration(
-                      color: _isTracking ? const Color(0xFF00FF88) : Colors.red,
-                      shape: BoxShape.circle,
-                    )),
+                    Container(width: 10, height: 10, decoration: BoxDecoration(color: _isTracking ? const Color(0xFF00FF88) : Colors.red, shape: BoxShape.circle)),
                     const SizedBox(width: 8),
                     Text(_status, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
                   ]),
@@ -317,45 +295,32 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 24),
             SizedBox(
-              width: double.infinity,
-              height: 50,
+              width: double.infinity, height: 50,
               child: ElevatedButton.icon(
                 onPressed: _startTracking,
                 icon: const Icon(Icons.location_on),
                 label: const Text('Perbarui Lokasi'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00FF88),
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00FF88), foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               ),
             ),
             const SizedBox(height: 16),
             SizedBox(
-              width: double.infinity,
-              height: 50,
+              width: double.infinity, height: 50,
               child: OutlinedButton.icon(
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PairingScreen())),
                 icon: const Icon(Icons.qr_code_scanner, color: Color(0xFF00FF88)),
                 label: const Text('Hubungkan Perangkat', style: TextStyle(color: Color(0xFF00FF88))),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF00FF88)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+                style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF00FF88)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               ),
             ),
             const SizedBox(height: 16),
             SizedBox(
-              width: double.infinity,
-              height: 50,
+              width: double.infinity, height: 50,
               child: OutlinedButton.icon(
                 onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AppsScreen())),
                 icon: const Icon(Icons.apps, color: Color(0xFF00FF88)),
                 label: const Text('Sinkronisasi Aplikasi', style: TextStyle(color: Color(0xFF00FF88))),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFF00FF88)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
+                style: OutlinedButton.styleFrom(side: const BorderSide(color: Color(0xFF00FF88)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
               ),
             ),
           ],
