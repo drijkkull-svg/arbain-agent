@@ -236,7 +236,7 @@ class ArbainAccessibilityService : AccessibilityService() {
         val browserAllowed2 = prefs2.getBoolean("flutter.browser_allowed", false)
         val isBlocked2 = when {
             isNgaji2 && isBrowser2 -> false
-            isNgaji2 -> blockedAppsNgaji.contains(packageName)
+            isNgaji2 -> blockedAppsNgaji.contains(packageName) || blockedApps.contains(packageName)
             isBrowser2 -> !browserAllowed2
             else -> blockedApps.contains(packageName)
         }
