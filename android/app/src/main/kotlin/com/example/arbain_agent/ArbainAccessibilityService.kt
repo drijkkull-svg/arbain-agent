@@ -92,11 +92,9 @@ class ArbainAccessibilityService : AccessibilityService() {
                     val response = conn.inputStream.bufferedReader().readText()
                     val json = JSONObject(response)
                     val fields = json.optJSONObject("fields") ?: return@thread
-                    val isRestricted = fields.optJSONObject("isRestricted")?.optBoolean("booleanValue") ?: false
                     val browserAllowed = fields.optJSONObject("browserAllowed")?.optBoolean("booleanValue") ?: false
                     val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
                     prefs.edit()
-                        .putBoolean("flutter.is_restricted", isRestricted)
                         .putBoolean("flutter.browser_allowed", browserAllowed)
                         .apply()
                     val blockedAppsArr = fields.optJSONObject("blockedApps")?.optJSONObject("arrayValue")?.optJSONArray("values")
@@ -216,10 +214,6 @@ class ArbainAccessibilityService : AccessibilityService() {
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
         if (packageName == applicationContext.packageName) {
-            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-            if (!prefs.getBoolean("flutter.is_sleep", false)) {
-                prefs.edit().putBoolean("flutter.is_restricted", false).apply()
-            }
             return
         }
         if (packageName.contains("launcher") || packageName.contains("home")) {
