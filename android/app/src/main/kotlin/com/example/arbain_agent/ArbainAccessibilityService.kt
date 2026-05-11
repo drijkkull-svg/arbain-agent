@@ -55,6 +55,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                 }
                 startActivity(homeIntent)
                 Log.d("ArbainService", "Closing app: $currentAppPackage")
+                showBlockedOverlay(currentAppPackage)
             }
             handler.postDelayed(this, 3000)
         }
@@ -383,6 +384,25 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     override fun onInterrupt() {}
+
+    private fun showBlockedOverlay(packageName: String) {
+        val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+        val params = android.view.WindowManager.LayoutParams(
+            android.view.WindowManager.LayoutParams.MATCH_PARENT,
+            android.view.WindowManager.LayoutParams.MATCH_PARENT,
+            android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+            android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            android.graphics.PixelFormat.TRANSLUCENT
+        )
+        val inflater = android.view.LayoutInflater.from(this)
+        val view = inflater.inflate(R.layout.overlay_blocked, null)
+        wm.addView(view, params)
+        Handler(Looper.getMainLooper()).postDelayed({
+            try { wm.removeView(view) } catch (e: Exception) {}
+        }, 3000)
+    }
 }
 
 
