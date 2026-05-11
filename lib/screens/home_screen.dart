@@ -48,14 +48,11 @@ class _HomeScreenState extends State<HomeScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
   }
 
-  Future<void> _checkUsageAccess() async {
-        // usage access handled in setup screen
-  }
+  Future<void> _checkUsageAccess() async {}
 
   Future<void> _checkAdminStatus() async {
     final active = await _deviceAdmin.isAdminActive();
     setState(() { _isAdminActive = active; });
-    // admin request handled in setup screen
   }
 
   void _listenToDeviceCommands() {
@@ -76,7 +73,6 @@ class _HomeScreenState extends State<HomeScreen> {
       });
       if (data['isRestricted'] == true) {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-        // lockScreen handled by dashboard
       } else {
         SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       }
@@ -114,6 +110,107 @@ class _HomeScreenState extends State<HomeScreen> {
     await prefs.setBool('is_restricted', isRestricted);
   }
 
+  // Generate kode 6 digit acak
+  String _generateCode() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    return (now % 900000 + 100000).toString();
+  }
+
+  Future<void> _requestLogout() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    final code = _generateCode();
+
+    // Simpan kode logout ke Firestore agar pengurus bisa lihat
+    await _firestore.collection('logout_requests').doc(uid).set({
+      'santriId': uid,
+      'code': code,
+      'status': 'pending',
+      'requestedAt': DateTime.now().toIso8601String(),
+    });
+
+    // Kirim notifikasi ke pengurus via Firestore
+    await _firestore.collection('notifications_admin').add({
+      'type': 'logout_request',
+      'santriId': uid,
+      'code': code,
+      'message': 'Santri meminta izin logout. Kode akses: $code',
+      'isRead': false,
+      'timestamp': DateTime.now().toIso8601String(),
+    });
+
+    if (!mounted) return;
+
+    // Tampilkan dialog input kode
+    final codeController = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF111111),
+        title: const Text('Izin Logout', style: TextStyle(color: Color(0xFF00FF88))),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Permintaan logout telah dikirim ke pengurus.\nMasukkan kode akses yang diberikan pengurus:',
+              style: TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: codeController,
+              keyboardType: TextInputType.number,
+              maxLength: 6,
+              style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
+              textAlign: TextAlign.center,
+              decoration: InputDecoration(
+                counterText: '',
+                hintText: '______',
+                hintStyle: TextStyle(color: Colors.white24),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Color(0xFF00FF88).withValues(alpha: 0.5)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: const BorderSide(color: Color(0xFF00FF88)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              // Batalkan request
+              await _firestore.collection('logout_requests').doc(uid).delete();
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Batal', style: TextStyle(color: Colors.red)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final inputCode = codeController.text.trim();
+              if (inputCode == code) {
+                // Kode benar, hapus request dan logout
+                await _firestore.collection('logout_requests').doc(uid).delete();
+                if (ctx.mounted) Navigator.pop(ctx);
+                await _logout();
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Kode salah!'), backgroundColor: Colors.red),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00FF88), foregroundColor: Colors.black),
+            child: const Text('Konfirmasi'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _logout() async {
     await _firestore.collection('devices').doc(_auth.currentUser?.uid).update({'isOnline': false});
     await _auth.signOut();
@@ -132,19 +229,19 @@ class _HomeScreenState extends State<HomeScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text('PONDOK PESANTREN', style: TextStyle(color: Color(0xFF00FF88), fontSize: 14, letterSpacing: 2)),
-                  const Text("Al-Mubarok Al-Arba'in", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 24),
-                  const Icon(Icons.lock, color: Colors.red, size: 80),
+                const Text("Al-Mubarok Al-Arba'in", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 24),
+                const Icon(Icons.lock, color: Colors.red, size: 80),
                 const SizedBox(height: 24),
                 Text(_isSleep ? 'WAKTU ISTIRAHAT' : 'PERANGKAT DIBATASI', style: TextStyle(color: _isSleep ? Colors.blue : Colors.red, fontSize: 24, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
                 const Text('Hubungi pengurus pondok untuk membuka akses.', style: TextStyle(color: Colors.white54), textAlign: TextAlign.center),
-                  const SizedBox(height: 32),
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    IconButton(icon: const Icon(Icons.phone, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('tel:'))),
-                    const SizedBox(width: 40),
-                    IconButton(icon: const Icon(Icons.camera_alt, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('market://launch?id=com.android.camera2'))),
-                  ]),
+                const SizedBox(height: 32),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  IconButton(icon: const Icon(Icons.phone, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('tel:'))),
+                  const SizedBox(width: 40),
+                  IconButton(icon: const Icon(Icons.camera_alt, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('market://launch?id=com.android.camera2'))),
+                ]),
               ],
             ),
           ),
@@ -180,7 +277,7 @@ class _HomeScreenState extends State<HomeScreen> {
         title: const Text('Arbain Agent', style: TextStyle(color: Color(0xFF00FF88), fontWeight: FontWeight.bold)),
         actions: [
           if (_isAlarmActive) const Icon(Icons.notifications_active, color: Colors.red),
-          IconButton(icon: const Icon(Icons.logout, color: Colors.white54), onPressed: _logout),
+          IconButton(icon: const Icon(Icons.logout, color: Colors.white54), onPressed: _requestLogout),
         ],
       ),
       body: Padding(
@@ -267,39 +364,3 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
