@@ -399,9 +399,10 @@ class ArbainAccessibilityService : AccessibilityService() {
         val inflater = android.view.LayoutInflater.from(this)
         val view = inflater.inflate(R.layout.overlay_blocked, null)
         wm.addView(view, params)
-        Handler(Looper.getMainLooper()).postDelayed({
+        view.setOnClickListener {
             try { wm.removeView(view) } catch (e: Exception) {}
-        }, 3000)
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }
     }
 }
 
