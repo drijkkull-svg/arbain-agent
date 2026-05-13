@@ -231,7 +231,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                 } catch (e: Exception) {
                     Log.e("ArbainService", "scheduleListener error: ${e.message}")
                 }
-                Thread.sleep(60000) // fetch jadwal tiap 60 detik
+                Thread.sleep(15000) // fetch jadwal tiap 60 detik
             }
         }
     }
