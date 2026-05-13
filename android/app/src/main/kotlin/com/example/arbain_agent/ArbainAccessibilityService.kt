@@ -296,7 +296,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                     }
                     findAndClick(root)
                 }
-            }, 500)
+            }, 100)
         }
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
