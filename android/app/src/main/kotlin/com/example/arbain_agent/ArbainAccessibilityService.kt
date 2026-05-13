@@ -25,19 +25,34 @@ class ArbainAccessibilityService : AccessibilityService() {
     private var sleepOverlayView: android.view.View? = null
     private val PROJECT_ID = "arbain-control"
     private val API_KEY = "AIzaSyC67z7V5FfvMPIMIAta8_Ha9TmYJnph190"
-    private var isPolling = false
 
     private val BROWSER_PACKAGES = setOf("com.android.chrome", "org.mozilla.firefox", "com.opera.browser", "com.microsoft.emmx")
 
-    private val pollRunnable = object : Runnable {
+    private var wasRestricted = false
+    private var lastBlockedPackage = ""
+    private var listenerRunning = false
+
+    // Polling ringan tiap 30 detik - hanya cek blocking, bukan fetch Firestore
+    private val checkRunnable = object : Runnable {
         override fun run() {
-            if (!isPolling) {
-                isPolling = true
-                pollFirestore()
-                pollSchedules()
-                isPolling = false
-            }
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val isRestricted = prefs.getBoolean("flutter.is_restricted", false)
+            Log.d("ArbainService", "wasRestricted=$wasRestricted isRestricted=$isRestricted")
+            if (isRestricted) {
+                val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                }
+                if (launchIntent != null) {
+                    startActivity(launchIntent)
+                    handler.postDelayed({
+                        val lockIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+                        }
+                        if (lockIntent != null) startActivity(lockIntent)
+                    }, 2000)
+                }
+            }
+            wasRestricted = isRestricted
             val isNgaji = prefs.getBoolean("flutter.is_ngaji", false)
             val isBrowser = BROWSER_PACKAGES.contains(currentAppPackage)
             val browserAllowed = prefs.getBoolean("flutter.browser_allowed", false)
@@ -48,16 +63,17 @@ class ArbainAccessibilityService : AccessibilityService() {
                 else -> blockedApps.contains(currentAppPackage)
             }
             val shouldBlock = currentAppPackage.isNotEmpty() && (isBlocked || isOverTimeLimit(currentAppPackage))
-            if (shouldBlock) {
+            if (shouldBlock && lastBlockedPackage != currentAppPackage) {
+                lastBlockedPackage = currentAppPackage
                 val homeIntent = Intent(Intent.ACTION_MAIN).apply {
                     addCategory(Intent.CATEGORY_HOME)
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
                 }
                 startActivity(homeIntent)
                 Log.d("ArbainService", "Closing app: $currentAppPackage")
-                showBlockedOverlay(currentAppPackage)
+                handler.postDelayed({ lastBlockedPackage = "" }, 3000)
             }
-            handler.postDelayed(this, 3000)
+            handler.postDelayed(this, 1000)
         }
     }
 
@@ -71,7 +87,14 @@ class ArbainAccessibilityService : AccessibilityService() {
         serviceInfo = info
         loadBlockedApps()
         loadAppUsageToday()
-        handler.post(pollRunnable)
+        // Fetch data pertama kali
+        fetchDeviceData()
+        fetchSchedules()
+        // Mulai realtime listener
+        startDeviceListener()
+        startScheduleListener()
+        // Mulai check runnable (ringan, hanya cek state lokal)
+        handler.post(checkRunnable)
     }
 
     private fun getDeviceUid(): String? {
@@ -79,9 +102,9 @@ class ArbainAccessibilityService : AccessibilityService() {
         return prefs.getString("flutter.device_uid", null)
     }
 
-    private fun pollFirestore() {
+    // Fetch sekali saat start
+    private fun fetchDeviceData() {
         val uid = getDeviceUid() ?: return
-        Log.d("ArbainService", "pollFirestore called, uid=$uid")
         thread {
             try {
                 val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/devices/$uid?key=$API_KEY")
@@ -91,49 +114,189 @@ class ArbainAccessibilityService : AccessibilityService() {
                 conn.readTimeout = 5000
                 if (conn.responseCode == 200) {
                     val response = conn.inputStream.bufferedReader().readText()
-                    val json = JSONObject(response)
-                    val fields = json.optJSONObject("fields") ?: return@thread
-                    val browserAllowed = fields.optJSONObject("browserAllowed")?.optBoolean("booleanValue") ?: false
-                    val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                    prefs.edit()
-                        .putBoolean("flutter.browser_allowed", browserAllowed)
-                        .apply()
-                    val blockedAppsArr = fields.optJSONObject("blockedApps")?.optJSONObject("arrayValue")?.optJSONArray("values")
-                    val newApps = mutableSetOf<String>()
-                    if (blockedAppsArr != null) {
-                        for (i in 0 until blockedAppsArr.length()) {
-                            newApps.add(blockedAppsArr.getJSONObject(i).optString("stringValue"))
-                        }
-                    }
-                    blockedApps = newApps
-                    Log.d("ArbainService", "blockedApps updated: $newApps")
-                    val timeLimitsObj = fields.optJSONObject("appTimeLimits")?.optJSONObject("mapValue")?.optJSONObject("fields")
-                    if (timeLimitsObj != null) {
-                        appTimeLimits.clear()
-                        fun flattenMap(obj: org.json.JSONObject, prefix: String) {
-                            obj.keys().forEach { key ->
-                                val fullKey = if (prefix.isEmpty()) key else "$prefix.$key"
-                                val fieldObj = obj.optJSONObject(key)
-                                val innerMap = fieldObj?.optJSONObject("mapValue")?.optJSONObject("fields")
-                                if (innerMap != null) {
-                                    flattenMap(innerMap, fullKey)
-                                } else {
-                                    val minutes = when {
-                                        fieldObj?.has("integerValue") == true -> fieldObj.optString("integerValue").toIntOrNull() ?: 0
-                                        fieldObj?.has("doubleValue") == true -> fieldObj.optDouble("doubleValue").toInt()
-                                        else -> 0
-                                    }
-                                    if (minutes > 0) appTimeLimits[fullKey] = minutes
-                                }
-                            }
-                        }
-                        flattenMap(timeLimitsObj, "")
-                        Log.d("ArbainService", "appTimeLimits updated: $appTimeLimits")
-                    }
+                    parseDeviceData(response)
                 }
                 conn.disconnect()
-            } catch (e: Exception) { Log.e("ArbainService", "pollFirestore error: ${e.message}", e) }
+            } catch (e: Exception) { Log.e("ArbainService", "fetchDeviceData error: ${e.message}") }
         }
+    }
+
+    private fun parseDeviceData(response: String) {
+        try {
+            val json = JSONObject(response)
+            val fields = json.optJSONObject("fields") ?: return
+            val browserAllowed = fields.optJSONObject("browserAllowed")?.optBoolean("booleanValue") ?: false
+            val isRestrictedFromFirestore = fields.optJSONObject("isRestricted")?.optBoolean("booleanValue") ?: false
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            prefs.edit()
+                .putBoolean("flutter.browser_allowed", browserAllowed)
+                .putBoolean("flutter.is_restricted", isRestrictedFromFirestore)
+                .apply()
+            Log.d("ArbainService", "isRestricted from Firestore: $isRestrictedFromFirestore")
+            val blockedAppsArr = fields.optJSONObject("blockedApps")?.optJSONObject("arrayValue")?.optJSONArray("values")
+            val newApps = mutableSetOf<String>()
+            if (blockedAppsArr != null) {
+                for (i in 0 until blockedAppsArr.length()) {
+                    newApps.add(blockedAppsArr.getJSONObject(i).optString("stringValue"))
+                }
+            }
+            blockedApps = newApps
+            Log.d("ArbainService", "blockedApps updated: $newApps")
+            val timeLimitsObj = fields.optJSONObject("appTimeLimits")?.optJSONObject("mapValue")?.optJSONObject("fields")
+            if (timeLimitsObj != null) {
+                appTimeLimits.clear()
+                fun flattenMap(obj: org.json.JSONObject, prefix: String) {
+                    obj.keys().forEach { key ->
+                        val fullKey = if (prefix.isEmpty()) key else "$prefix.$key"
+                        val fieldObj = obj.optJSONObject(key)
+                        val innerMap = fieldObj?.optJSONObject("mapValue")?.optJSONObject("fields")
+                        if (innerMap != null) {
+                            flattenMap(innerMap, fullKey)
+                        } else {
+                            val minutes = when {
+                                fieldObj?.has("integerValue") == true -> fieldObj.optString("integerValue").toIntOrNull() ?: 0
+                                fieldObj?.has("doubleValue") == true -> fieldObj.optDouble("doubleValue").toInt()
+                                else -> 0
+                            }
+                            if (minutes > 0) appTimeLimits[fullKey] = minutes
+                        }
+                    }
+                }
+                flattenMap(timeLimitsObj, "")
+            }
+        } catch (e: Exception) { Log.e("ArbainService", "parseDeviceData error: ${e.message}") }
+    }
+
+    // Realtime listener untuk device document
+    private fun startDeviceListener() {
+        val uid = getDeviceUid() ?: return
+        thread {
+            while (true) {
+                try {
+                    Log.d("ArbainService", "startDeviceListener connecting...")
+                    val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/devices/$uid?key=$API_KEY")
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 70000 // long poll 70 detik
+                    conn.setRequestProperty("Accept", "text/event-stream")
+                    if (conn.responseCode == 200) {
+                        val response = conn.inputStream.bufferedReader().readText()
+                        parseDeviceData(response)
+                        Log.d("ArbainService", "deviceListener: data updated")
+                    }
+                    conn.disconnect()
+                } catch (e: Exception) {
+                    Log.e("ArbainService", "deviceListener error: ${e.message}")
+                }
+                Thread.sleep(30000) // retry tiap 30 detik kalau koneksi putus
+            }
+        }
+    }
+
+    // Fetch schedules sekali saat start
+    private fun fetchSchedules() {
+        thread {
+            try {
+                val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/schedules?key=$API_KEY")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.connectTimeout = 5000
+                conn.readTimeout = 5000
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().readText()
+                    parseSchedules(response)
+                }
+                conn.disconnect()
+            } catch (e: Exception) { Log.e("ArbainService", "fetchSchedules error: ${e.message}") }
+        }
+    }
+
+    // Realtime listener untuk schedules - polling tiap 60 detik (jadwal jarang berubah)
+    private fun startScheduleListener() {
+        thread {
+            while (true) {
+                try {
+                    Log.d("ArbainService", "startScheduleListener tick")
+                    val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/schedules?key=$API_KEY")
+                    val conn = url.openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
+                    if (conn.responseCode == 200) {
+                        val response = conn.inputStream.bufferedReader().readText()
+                        parseSchedules(response)
+                    }
+                    conn.disconnect()
+                } catch (e: Exception) {
+                    Log.e("ArbainService", "scheduleListener error: ${e.message}")
+                }
+                Thread.sleep(60000) // fetch jadwal tiap 60 detik
+            }
+        }
+    }
+
+    private fun parseSchedules(response: String) {
+        try {
+            val json = JSONObject(response)
+            val docs = json.optJSONArray("documents") ?: run {
+                hideSleepOverlay()
+                val p = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                p.edit().putBoolean("flutter.is_sleep", false).apply()
+                p.edit().putBoolean("flutter.is_ngaji", false).apply()
+                return
+            }
+            val now = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
+            val currentDay = arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[now.get(java.util.Calendar.DAY_OF_WEEK) - 1]
+            val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
+            var shouldSleep = false
+            var shouldNgaji = false
+            for (i in 0 until docs.length()) {
+                val fields = docs.getJSONObject(i).optJSONObject("fields") ?: continue
+                val isActive = fields.optJSONObject("isActive")?.optBoolean("booleanValue") ?: false
+                if (!isActive) continue
+                val scheduleType = fields.optJSONObject("type")?.optString("stringValue") ?: "sleep"
+                val daysArr = fields.optJSONObject("days")?.optJSONObject("arrayValue")?.optJSONArray("values") ?: continue
+                val days = mutableListOf<String>()
+                for (j in 0 until daysArr.length()) { days.add(daysArr.getJSONObject(j).optString("stringValue")) }
+                if (!days.contains(currentDay)) continue
+                val startTime = fields.optJSONObject("startTime")?.optString("stringValue") ?: continue
+                val endTime = fields.optJSONObject("endTime")?.optString("stringValue") ?: continue
+                val startMinutes = startTime.split(":")[0].toInt() * 60 + startTime.split(":")[1].toInt()
+                val endMinutes = endTime.split(":")[0].toInt() * 60 + endTime.split(":")[1].toInt()
+                val inSchedule = if (startMinutes <= endMinutes) currentMinutes >= startMinutes && currentMinutes < endMinutes else currentMinutes >= startMinutes || currentMinutes < endMinutes
+                Log.d("ArbainService", "type=$scheduleType day=$currentDay start=$startMinutes end=$endMinutes cur=$currentMinutes in=$inSchedule")
+                if (inSchedule && scheduleType == "sleep") shouldSleep = true
+                if (inSchedule && scheduleType == "ngaji") {
+                    shouldNgaji = true
+                    val appsArr = fields.optJSONObject("blockedAppsNgaji")?.optJSONObject("arrayValue")?.optJSONArray("values")
+                    val newBlockedNgaji = mutableSetOf<String>()
+                    if (appsArr != null) {
+                        for (k in 0 until appsArr.length()) {
+                            newBlockedNgaji.add(appsArr.getJSONObject(k).optString("stringValue"))
+                        }
+                    }
+                    if (newBlockedNgaji.isNotEmpty()) blockedAppsNgaji = newBlockedNgaji
+                }
+            }
+            val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("flutter.is_ngaji", shouldNgaji).apply()
+            if (shouldSleep) {
+                val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
+                val admin = android.content.ComponentName(this, ArbainDeviceAdminReceiver::class.java)
+                if (dpm.isAdminActive(admin)) {
+                    showSleepOverlay()
+                    handler.post {
+                        try { dpm.lockNow() } catch (ex: Exception) { Log.e("ArbainService", "lockNow error: ${ex.message}") }
+                    }
+                }
+                prefs.edit().putBoolean("flutter.is_sleep", true).apply()
+                prefs.edit().putBoolean("flutter.is_restricted", true).apply()
+            } else {
+                prefs.edit().putBoolean("flutter.is_sleep", false).apply()
+                hideSleepOverlay()
+            }
+        } catch (e: Exception) { Log.e("ArbainService", "parseSchedules error: ${e.message}") }
     }
 
     private fun loadAppUsageToday() {
@@ -210,13 +373,28 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        Log.d("ArbainService", "onAccessibilityEvent fired! pkg=${event?.packageName}")
         if (event == null) return
+        if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            handler.postDelayed({
+                val allWindows = windows ?: return@postDelayed
+                for (window in allWindows) {
+                    val root = window.root ?: continue
+                    fun findAndClick(node: android.view.accessibility.AccessibilityNodeInfo?) {
+                        if (node == null) return
+                        val text = node.text?.toString() ?: ""
+                        if ((text == "Mengerti" || text == "Got it" || text == "OK") && node.isClickable) {
+                            node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)
+                            return
+                        }
+                        for (i in 0 until node.childCount) findAndClick(node.getChild(i))
+                    }
+                    findAndClick(root)
+                }
+            }, 500)
+        }
         if (event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val packageName = event.packageName?.toString() ?: return
-        if (packageName == applicationContext.packageName) {
-            return
-        }
+        if (packageName == applicationContext.packageName) return
         if (packageName.contains("launcher") || packageName.contains("home")) {
             trackAppUsage("")
             return
@@ -224,7 +402,6 @@ class ArbainAccessibilityService : AccessibilityService() {
         checkAndResetDaily()
         trackAppUsage(packageName)
         loadAppTimeLimits()
-        Log.d("ArbainService", "checking: pkg=$packageName blocked=${blockedApps.contains(packageName)}")
         val prefs2 = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
         val isNgaji2 = prefs2.getBoolean("flutter.is_ngaji", false)
         val isBrowser2 = BROWSER_PACKAGES.contains(packageName)
@@ -302,116 +479,27 @@ class ArbainAccessibilityService : AccessibilityService() {
         handler.post { sleepOverlayView?.let { try { wm.removeView(it) } catch (e: Exception) {}; sleepOverlayView = null } }
     }
 
-    private fun pollSchedules() {
-        thread {
-            try {
-                Log.d("ArbainService", "pollSchedules called")
-                val nowDebug = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
-                Log.d("ArbainService", "day=${arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[nowDebug.get(java.util.Calendar.DAY_OF_WEEK)-1]}, min=${nowDebug.get(java.util.Calendar.HOUR_OF_DAY)*60+nowDebug.get(java.util.Calendar.MINUTE)}")
-                val url = URL("https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/schedules?key=$API_KEY")
-                val conn = url.openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.connectTimeout = 5000
-                conn.readTimeout = 5000
-                if (conn.responseCode == 200) {
-                    val response = conn.inputStream.bufferedReader().readText()
-                    val json = JSONObject(response)
-                    val docs = json.optJSONArray("documents") ?: run {
-                        hideSleepOverlay()
-                        val p = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                        p.edit().putBoolean("flutter.is_sleep", false).apply()
-                        p.edit().putBoolean("flutter.is_restricted", false).apply()
-                        p.edit().putBoolean("flutter.is_ngaji", false).apply()
-                        return@thread
-                    }
-                    val now = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
-                    val currentDay = arrayOf("Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu")[now.get(java.util.Calendar.DAY_OF_WEEK) - 1]
-                    val currentMinutes = now.get(java.util.Calendar.HOUR_OF_DAY) * 60 + now.get(java.util.Calendar.MINUTE)
-                    var shouldSleep = false
-                    var shouldNgaji = false
-                    for (i in 0 until docs.length()) {
-                        val fields = docs.getJSONObject(i).optJSONObject("fields") ?: continue
-                        val isActive = fields.optJSONObject("isActive")?.optBoolean("booleanValue") ?: false
-                        if (!isActive) continue
-                        val scheduleType = fields.optJSONObject("type")?.optString("stringValue") ?: "sleep"
-                        val daysArr = fields.optJSONObject("days")?.optJSONObject("arrayValue")?.optJSONArray("values") ?: continue
-                        val days = mutableListOf<String>()
-                        for (j in 0 until daysArr.length()) { days.add(daysArr.getJSONObject(j).optString("stringValue")) }
-                        if (!days.contains(currentDay)) continue
-                        val startTime = fields.optJSONObject("startTime")?.optString("stringValue") ?: continue
-                        val endTime = fields.optJSONObject("endTime")?.optString("stringValue") ?: continue
-                        val startMinutes = startTime.split(":")[0].toInt() * 60 + startTime.split(":")[1].toInt()
-                        val endMinutes = endTime.split(":")[0].toInt() * 60 + endTime.split(":")[1].toInt()
-                        val inSchedule = if (startMinutes <= endMinutes) currentMinutes >= startMinutes && currentMinutes < endMinutes else currentMinutes >= startMinutes || currentMinutes < endMinutes
-                        Log.d("ArbainService", "type=$scheduleType day=$currentDay start=$startMinutes end=$endMinutes cur=$currentMinutes in=$inSchedule")
-                        if (inSchedule && scheduleType == "sleep") shouldSleep = true
-                        if (inSchedule && scheduleType == "ngaji") {
-                            shouldNgaji = true
-                            val appsArr = fields.optJSONObject("blockedAppsNgaji")?.optJSONObject("arrayValue")?.optJSONArray("values")
-                            val newBlockedNgaji = mutableSetOf<String>()
-                            if (appsArr != null) {
-                                for (k in 0 until appsArr.length()) {
-                                    newBlockedNgaji.add(appsArr.getJSONObject(k).optString("stringValue"))
-                                }
-                            }
-                            blockedAppsNgaji = newBlockedNgaji
-                        }
-                    }
-                    val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
-                    prefs.edit().putBoolean("flutter.is_ngaji", shouldNgaji).apply()
-                    if (shouldSleep) {
-                        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
-                        val admin = android.content.ComponentName(this, ArbainDeviceAdminReceiver::class.java)
-                        if (dpm.isAdminActive(admin)) {
-                            showSleepOverlay()
-                            Log.d("ArbainService", "isAdminActive=true, calling lockNow")
-                            handler.post {
-                                try { dpm.lockNow(); Log.d("ArbainService", "lockNow called") }
-                                catch (ex: Exception) { Log.e("ArbainService", "lockNow error: ${ex.message}") }
-                            }
-                        } else { Log.d("ArbainService", "isAdminActive=FALSE") }
-                        prefs.edit().putBoolean("flutter.is_sleep", true).apply()
-                        prefs.edit().putBoolean("flutter.is_restricted", true).apply()
-                    } else {
-                        prefs.edit().putBoolean("flutter.is_sleep", false).apply()
-                        hideSleepOverlay()
-                        // Jangan override isRestricted dari pengurus!
-                    }
-                }
-                conn.disconnect()
-            } catch (e: Exception) { Log.e("ArbainService", "pollSchedules error: ${e.message}", e) }
-        }
-    }
-
-    override fun onInterrupt() {}
-
     private fun showBlockedOverlay(packageName: String) {
         val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
         val params = android.view.WindowManager.LayoutParams(
             android.view.WindowManager.LayoutParams.MATCH_PARENT,
             android.view.WindowManager.LayoutParams.MATCH_PARENT,
             android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-            android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
             android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT
         )
         val inflater = android.view.LayoutInflater.from(this)
         val view = inflater.inflate(R.layout.overlay_blocked, null)
         wm.addView(view, params)
+        handler.postDelayed({
+            try { wm.removeView(view) } catch (e: Exception) {}
+            performGlobalAction(GLOBAL_ACTION_HOME)
+        }, 1000)
         view.setOnClickListener {
             try { wm.removeView(view) } catch (e: Exception) {}
             performGlobalAction(GLOBAL_ACTION_HOME)
         }
     }
+
+    override fun onInterrupt() {}
 }
-
-
-
-
-
-
-
-
-
-
