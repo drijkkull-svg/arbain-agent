@@ -34,5 +34,5 @@ flutter {
 
 dependencies {
     implementation(platform("com.google.firebase:firebase-bom:32.7.0"))
-    implementation("com.google.firebase:firebase-firestore-ktx")
+    implementation("com.google.firebase:firebase-firestore-ktx:25.1.1")
 }
