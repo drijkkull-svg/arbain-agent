@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'dart:async';
 import '../services/device_admin_service.dart';
 import '../services/schedule_service.dart';
@@ -27,6 +28,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _scheduleService = ScheduleService();
   final _autoUpdate = AutoUpdateService();
   final _geofenceService = GeofenceService();
+  final _battery = Battery();
 
   String _status = 'Memulai...';
   bool _isTracking = false;
@@ -40,8 +42,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String _lastSync = '-';
   DateTime _now = DateTime.now();
   Timer? _clockTimer;
+  Timer? _batteryTimer;
   List<Map<String, dynamic>> _todaySchedules = [];
   Map<String, int> _appUsageMinutes = {};
+  int _batteryLevel = 0;
+  List<Map<String, dynamic>> _notifications = [];
 
   @override
   void initState() {
@@ -49,8 +54,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _startTracking();
     _listenToDeviceCommands();
+    _listenToNotifications();
     _loadTodaySchedules();
     _loadAppUsage();
+    _loadBattery();
     SharedPreferences.getInstance().then((prefs) => setState(() {
           _isSleep = prefs.getBool('is_sleep') ?? false;
           _isRestricted = prefs.getBool('is_restricted') ?? false;
@@ -70,25 +77,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_isRestricted) _enterKioskMode();
     });
-    // Clock timer
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() => _now = DateTime.now());
     });
+    _batteryTimer = Timer.periodic(const Duration(minutes: 2), (_) => _loadBattery());
   }
 
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _batteryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _geofenceService.stop();
     _scheduleService.stop();
     super.dispose();
   }
 
+  Future<void> _loadBattery() async {
+    try {
+      final level = await _battery.batteryLevel;
+      if (mounted) {
+        setState(() => _batteryLevel = level);
+        final uid = _auth.currentUser?.uid;
+        if (uid != null) {
+          await _firestore.collection('devices').doc(uid).update({'batteryLevel': level});
+        }
+      }
+    } catch (e) { debugPrint('battery error: $e'); }
+  }
+
+  void _listenToNotifications() {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+    _firestore.collection('notifications')
+        .where('targetAll', isEqualTo: true)
+        .orderBy('createdAt', descending: true)
+        .limit(5)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+      setState(() => _notifications = list);
+    });
+  }
+
   Future<void> _loadTodaySchedules() async {
     try {
-      final uid = _auth.currentUser?.uid;
-      if (uid == null) return;
       final snap = await _firestore.collection('schedules').get();
       final days = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
       final today = days[DateTime.now().weekday % 7];
@@ -106,9 +140,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         });
       }
       if (mounted) setState(() => _todaySchedules = result);
-    } catch (e) {
-      debugPrint('loadTodaySchedules error: $e');
-    }
+    } catch (e) { debugPrint('loadTodaySchedules error: $e'); }
   }
 
   Future<void> _loadAppUsage() async {
@@ -128,9 +160,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       final sorted = Map.fromEntries(map.entries.toList()..sort((a, b) => b.value.compareTo(a.value)));
       if (mounted) setState(() => _appUsageMinutes = Map.fromEntries(sorted.entries.take(5)));
-    } catch (e) {
-      debugPrint('loadAppUsage error: $e');
-    }
+    } catch (e) { debugPrint('loadAppUsage error: $e'); }
   }
 
   Future<void> _enterKioskMode() async {
@@ -316,6 +346,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return map[pkg] ?? pkg.split('.').last;
   }
 
+  Color _batteryColor() {
+    if (_batteryLevel > 50) return const Color(0xFF00FF88);
+    if (_batteryLevel > 20) return Colors.orange;
+    return Colors.red;
+  }
+
+  IconData _batteryIcon() {
+    if (_batteryLevel > 80) return Icons.battery_full;
+    if (_batteryLevel > 50) return Icons.battery_5_bar;
+    if (_batteryLevel > 20) return Icons.battery_3_bar;
+    return Icons.battery_1_bar;
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isRestricted) {
@@ -386,6 +429,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ]),
         actions: [
           if (_isAlarmActive) const Icon(Icons.notifications_active, color: Colors.red),
+          if (_notifications.isNotEmpty)
+            Stack(children: [
+              IconButton(icon: const Icon(Icons.notifications, color: Colors.white54), onPressed: _showNotifications),
+              Positioned(right: 8, top: 8, child: Container(
+                width: 8, height: 8,
+                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+              )),
+            ]),
           IconButton(icon: const Icon(Icons.logout, color: Colors.white54), onPressed: _requestLogout),
         ],
       ),
@@ -393,7 +444,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         padding: const EdgeInsets.all(20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-          // JAM & TANGGAL
+          // JAM, TANGGAL & BATERAI
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(20),
@@ -410,6 +461,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold, letterSpacing: 2),
                 ),
                 Text(_formatTanggal(_now), style: const TextStyle(color: Color(0xFF00FF88), fontSize: 13)),
+                if (_batteryLevel > 0) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Icon(_batteryIcon(), color: _batteryColor(), size: 16),
+                    const SizedBox(width: 4),
+                    Text('$_batteryLevel%', style: TextStyle(color: _batteryColor(), fontSize: 13, fontWeight: FontWeight.bold)),
+                  ]),
+                ],
               ]),
               const Spacer(),
               if (_santriName.isNotEmpty) Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
@@ -418,6 +477,36 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               ]),
             ]),
           ),
+
+          // NOTIFIKASI DARI PENGURUS
+          if (_notifications.isNotEmpty) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111111),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+              ),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  const Icon(Icons.campaign, color: Colors.amber, size: 16),
+                  const SizedBox(width: 8),
+                  const Text('PENGUMUMAN', style: TextStyle(color: Colors.amber, fontSize: 11, letterSpacing: 1.5, fontWeight: FontWeight.bold)),
+                ]),
+                const SizedBox(height: 10),
+                ...(_notifications.take(3).map((n) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    const Icon(Icons.circle, color: Colors.amber, size: 6),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(n['message'] ?? '', style: const TextStyle(color: Colors.white70, fontSize: 13))),
+                  ]),
+                ))),
+              ]),
+            ),
+          ],
 
           // STATUS PERANGKAT
           Container(
@@ -492,6 +581,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 await _startTracking();
                 await _loadTodaySchedules();
                 await _loadAppUsage();
+                await _loadBattery();
               }),
               _menuCard(Icons.link, 'Hubungkan\nPerangkat', 'Pairing dengan pengurus', const Color(0xFF00AAFF), () {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => const PairingScreen()));
@@ -564,6 +654,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Expanded(child: Text('Perangkat ini dikelola oleh Pengurus Pondok Pesantren Al-Mubarok Al-Arba\'in', style: TextStyle(color: Colors.white38, fontSize: 12))),
             ]),
           ),
+        ]),
+      ),
+    );
+  }
+
+  void _showNotifications() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF111111),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('PENGUMUMAN', style: TextStyle(color: Colors.amber, fontSize: 14, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
+          const SizedBox(height: 16),
+          ..._notifications.map((n) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.campaign, color: Colors.amber, size: 20),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(n['message'] ?? '', style: const TextStyle(color: Colors.white, fontSize: 14)),
+                if (n['createdAt'] != null)
+                  Text(n['createdAt'].toString().substring(0, 10), style: const TextStyle(color: Colors.white38, fontSize: 11)),
+              ])),
+            ]),
+          )),
         ]),
       ),
     );
