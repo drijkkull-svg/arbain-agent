@@ -10,6 +10,7 @@ import 'dart:async';
 import '../services/device_admin_service.dart';
 import '../services/schedule_service.dart';
 import '../services/auto_update_service.dart';
+import '../services/absensi_service.dart';
 import '../services/app_usage_service.dart';
 import '../services/geofence_service.dart';
 import 'login_screen.dart';
@@ -39,6 +40,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isLostMode = false;
   bool _isAdminActive = false;
   String _santriName = '';
+  final _absensiService = AbsensiService();
+  bool _isNgajiTime = false;
+  bool _sudahAbsen = false;
   String _kamar = '';
   String _lastSync = '-';
   DateTime _now = DateTime.now();
@@ -60,6 +64,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadAppUsage();
     _loadBattery();
     AppUsageService.syncAppUsage();
+    _absensiService.start(
+      onNgajiTime: (isNgaji) {
+        if (mounted) setState(() => _isNgajiTime = isNgaji);
+      },
+      onAbsenDeadline: () {
+        if (!_sudahAbsen && mounted) {
+          _saveRestrictedState(true);
+        }
+      },
+    );
     Timer.periodic(const Duration(minutes: 30), (_) => AppUsageService.syncAppUsage());
     SharedPreferences.getInstance().then((prefs) => setState(() {
           _isSleep = prefs.getBool('is_sleep') ?? false;
@@ -72,6 +86,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _scheduleService.startScheduleChecker((shouldRestrict) {
       SharedPreferences.getInstance()
           .then((prefs) => prefs.setBool('is_restricted', shouldRestrict));
+      if (mounted) setState(() => _isRestricted = shouldRestrict);
+      if (shouldRestrict && mounted) _enterKioskMode();
+      if (!shouldRestrict && mounted) _exitKioskMode();
     });
     _checkUsageAccess();
     _geofenceService.startGeofenceChecker();
@@ -92,6 +109,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _batteryTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _geofenceService.stop();
+    _absensiService.stop();
     _scheduleService.stop();
     super.dispose();
   }
@@ -666,9 +684,71 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               Expanded(child: Text('Perangkat ini dikelola oleh Pengurus Pondok Pesantren Al-Mubarok Al-Arba\'in', style: TextStyle(color: Colors.white38, fontSize: 12))),
             ]),
           ),
+          const SizedBox(height: 16),
+          GestureDetector(
+            onLongPress: _sendPanicAlert,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.withValues(alpha: 0.4)),
+              ),
+              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: const [
+                Icon(Icons.sos, color: Colors.red, size: 20),
+                SizedBox(width: 8),
+                Text('TAHAN UNTUK KIRIM BANTUAN DARURAT', style: TextStyle(color: Colors.red, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+              ]),
+            ),
+          ),
         ]),
       ),
     );
+  }
+
+  Future<void> _doAbsen() async {
+    final result = await _absensiService.absen();
+    if (!mounted) return;
+    if (result == 'SUCCESS') {
+      setState(() => _sudahAbsen = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('✅ Absen berhasil! Selamat mengaji.'), backgroundColor: Colors.green, duration: Duration(seconds: 3)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal: ' + result), backgroundColor: Colors.red, duration: const Duration(seconds: 3)),
+      );
+    }
+  }
+
+  Future<void> _sendPanicAlert() async {
+    try {
+      final uid = _auth.currentUser?.uid;
+      if (uid == null) return;
+                  final uid2 = _auth.currentUser?.uid ?? '';
+      final userDoc = await _firestore.collection('users').doc(uid2).get();
+      final name = (userDoc.data()?['name']?.toString() ?? '').isNotEmpty ? userDoc.data()!['name'].toString() : (_santriName.isNotEmpty ? _santriName : 'Santri');
+      final kamar = (userDoc.data()?['kamar']?.toString() ?? '').isNotEmpty ? userDoc.data()!['kamar'].toString() : (_kamar.isNotEmpty ? _kamar : '-');
+      await _firestore.collection('panic_alerts').add({
+        'santriId': uid,
+        'santriName': name,
+        'kamar': kamar,
+        'timestamp': DateTime.now().toIso8601String(),
+        'isRead': false,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('🆘 Bantuan darurat telah dikirim ke pengurus!'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   void _showNotifications() {
