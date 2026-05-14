@@ -34,16 +34,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _isAlarmActive = false;
   bool _isLostMode = false;
   bool _isAdminActive = false;
+  String _santriName = '';
+  String _kamar = '';
+  String _lastSync = '-';
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // <-- tambah observer
+    WidgetsBinding.instance.addObserver(this);
     _startTracking();
     _listenToDeviceCommands();
     SharedPreferences.getInstance().then((prefs) => setState(() {
           _isSleep = prefs.getBool('is_sleep') ?? false;
           _isRestricted = prefs.getBool('is_restricted') ?? false;
+          _santriName = prefs.getString('username') ?? '';
+          _kamar = prefs.getString('kamar') ?? '';
         }));
     _deviceAdmin.listenLockCommand();
     _checkAdminStatus();
@@ -55,8 +60,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _geofenceService.startGeofenceChecker();
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _autoUpdate.checkUpdate(context));
-
-    // Apply lock mode jika sudah restricted dari sebelumnya
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_isRestricted) _enterKioskMode();
     });
@@ -64,24 +67,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this); // <-- remove observer
+    WidgetsBinding.instance.removeObserver(this);
     _geofenceService.stop();
     _scheduleService.stop();
     super.dispose();
   }
 
-  // ============================================================
-  // KIOSK MODE: dipanggil saat _isRestricted = true
-  // ============================================================
   Future<void> _enterKioskMode() async {
-    SystemChrome.setEnabledSystemUIMode(
-      SystemUiMode.immersiveSticky,
-      overlays: [],
-    );
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky, overlays: []);
     SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
     try {
-      await const MethodChannel('com.example.arbain_agent/device_admin')
-          .invokeMethod('startLockTask');
+      await const MethodChannel('com.example.arbain_agent/device_admin').invokeMethod('startLockTask');
     } catch (e) {
       debugPrint('startLockTask error: $e');
     }
@@ -91,18 +87,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(DeviceOrientation.values);
     try {
-      await const MethodChannel('com.example.arbain_agent/device_admin')
-          .invokeMethod('stopLockTask');
+      await const MethodChannel('com.example.arbain_agent/device_admin').invokeMethod('stopLockTask');
     } catch (e) {
       debugPrint('stopLockTask error: $e');
     }
   }
 
-  // ============================================================
-  // APP LIFECYCLE OBSERVER
-  // Kalau app di-minimize/di-background saat restricted,
-  // langsung kembalikan ke foreground & re-apply kiosk mode
-  // ============================================================
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
@@ -113,41 +103,33 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // ============================================================
-  // LISTEN FIRESTORE
-  // ============================================================
   Future<void> _checkUsageAccess() async {}
 
   Future<void> _checkAdminStatus() async {
     final active = await _deviceAdmin.isAdminActive();
-    setState(() {
-      _isAdminActive = active;
-    });
+    setState(() { _isAdminActive = active; });
   }
 
   void _listenToDeviceCommands() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
-    SharedPreferences.getInstance()
-        .then((prefs) => prefs.setString('device_uid', uid));
+    SharedPreferences.getInstance().then((prefs) => prefs.setString('device_uid', uid));
     _firestore.collection('devices').doc(uid).snapshots().listen((snap) async {
       if (!snap.exists) return;
       final data = snap.data()!;
       _saveRestrictedState(data['isRestricted'] ?? false);
       final prefs2 = await SharedPreferences.getInstance();
       if (!mounted) return;
-
       final wasRestricted = _isRestricted;
       final nowRestricted = data['isRestricted'] ?? false;
-
       setState(() {
         _isRestricted = nowRestricted;
         _isSleep = prefs2.getBool('is_sleep') ?? false;
         _isAlarmActive = data['isAlarmActive'] ?? false;
         _isLostMode = data['isLostMode'] ?? false;
+        _santriName = prefs2.getString('username') ?? '';
+        _kamar = prefs2.getString('kamar') ?? '';
       });
-
-      // Masuk / keluar kiosk mode berdasarkan perubahan state
       if (nowRestricted && !wasRestricted) {
         _enterKioskMode();
       } else if (!nowRestricted && wasRestricted) {
@@ -163,19 +145,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     });
     try {
       LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.denied) {
-        setState(() {
-          _status = 'Izin lokasi ditolak.';
-        });
+        setState(() { _status = 'Izin lokasi ditolak.'; });
         return;
       }
       Position position = await Geolocator.getCurrentPosition(
-        locationSettings:
-            const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
       final uid = _auth.currentUser?.uid;
       if (uid != null) {
@@ -184,14 +162,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           'isOnline': true,
           'updatedAt': DateTime.now().toIso8601String(),
         });
+        final now = DateTime.now();
         setState(() {
           _status = 'Lokasi terkirim!';
+          _lastSync = '${now.hour.toString().padLeft(2,'0')}:${now.minute.toString().padLeft(2,'0')}';
         });
       }
     } catch (e) {
-      setState(() {
-        _status = 'Error: $e';
-      });
+      setState(() { _status = 'Error: $e'; });
     }
   }
 
@@ -230,35 +208,24 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF111111),
-        title: const Text('Izin Logout',
-            style: TextStyle(color: Color(0xFF00FF88))),
+        title: const Text('Izin Logout', style: TextStyle(color: Color(0xFF00FF88))),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-                'Permintaan logout telah dikirim ke pengurus.\nMasukkan kode akses yang diberikan pengurus:',
-                style: TextStyle(color: Colors.white70, fontSize: 13)),
+            const Text('Permintaan logout telah dikirim ke pengurus.\nMasukkan kode akses yang diberikan pengurus:', style: TextStyle(color: Colors.white70, fontSize: 13)),
             const SizedBox(height: 16),
             TextField(
               controller: codeController,
               keyboardType: TextInputType.number,
               maxLength: 6,
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 24, letterSpacing: 8),
+              style: const TextStyle(color: Colors.white, fontSize: 24, letterSpacing: 8),
               textAlign: TextAlign.center,
               decoration: InputDecoration(
                 counterText: '',
                 hintText: '______',
                 hintStyle: const TextStyle(color: Colors.white24),
-                enabledBorder: OutlineInputBorder(
-                    borderSide: BorderSide(
-                        color:
-                            const Color(0xFF00FF88).withValues(alpha: 0.5)),
-                    borderRadius: BorderRadius.circular(8)),
-                focusedBorder: OutlineInputBorder(
-                    borderSide:
-                        const BorderSide(color: Color(0xFF00FF88)),
-                    borderRadius: BorderRadius.circular(8)),
+                enabledBorder: OutlineInputBorder(borderSide: BorderSide(color: const Color(0xFF00FF88).withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(8)),
+                focusedBorder: OutlineInputBorder(borderSide: const BorderSide(color: Color(0xFF00FF88)), borderRadius: BorderRadius.circular(8)),
               ),
             ),
           ],
@@ -266,33 +233,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         actions: [
           TextButton(
             onPressed: () async {
-              await _firestore
-                  .collection('logout_requests')
-                  .doc(uid)
-                  .delete();
+              await _firestore.collection('logout_requests').doc(uid).delete();
               if (ctx.mounted) Navigator.pop(ctx);
             },
-            child:
-                const Text('Batal', style: TextStyle(color: Colors.red)),
+            child: const Text('Batal', style: TextStyle(color: Colors.red)),
           ),
           ElevatedButton(
             onPressed: () async {
               if (codeController.text.trim() == code) {
-                await _firestore
-                    .collection('logout_requests')
-                    .doc(uid)
-                    .delete();
+                await _firestore.collection('logout_requests').doc(uid).delete();
                 if (ctx.mounted) Navigator.pop(ctx);
                 await _logout();
               } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                    content: Text('Kode salah!'),
-                    backgroundColor: Colors.red));
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kode salah!'), backgroundColor: Colors.red));
               }
             },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00FF88),
-                foregroundColor: Colors.black),
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00FF88), foregroundColor: Colors.black),
             child: const Text('Konfirmasi'),
           ),
         ],
@@ -301,85 +257,42 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _logout() async {
-    await _firestore
-        .collection('devices')
-        .doc(_auth.currentUser?.uid)
-        .update({'isOnline': false});
+    await _firestore.collection('devices').doc(_auth.currentUser?.uid).update({'isOnline': false});
     await _auth.signOut();
-    if (mounted)
-      Navigator.pushReplacement(context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()));
+    if (mounted) Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
-  // ============================================================
-  // BUILD
-  // ============================================================
   @override
   Widget build(BuildContext context) {
-    // ---- RESTRICTED / SLEEP LOCK SCREEN ----
     if (_isRestricted) {
       return PopScope(
         canPop: false,
-        onPopInvokedWithResult: (didPop, result) {
-          // Re-apply kiosk setiap kali ada attempt pop
-          _enterKioskMode();
-        },
+        onPopInvokedWithResult: (didPop, result) { _enterKioskMode(); },
         child: AnnotatedRegion<SystemUiOverlayStyle>(
-          value: const SystemUiOverlayStyle(
-            statusBarColor: Colors.transparent,
-            systemNavigationBarColor: Colors.transparent,
-          ),
+          value: const SystemUiOverlayStyle(statusBarColor: Colors.transparent, systemNavigationBarColor: Colors.transparent),
           child: Scaffold(
             backgroundColor: const Color(0xFF0A0A0A),
             body: GestureDetector(
-              // Blok semua gesture yang tidak perlu
               onVerticalDragStart: (_) {},
               onHorizontalDragStart: (_) {},
               child: Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Text('PONDOK PESANTREN',
-                        style: TextStyle(
-                            color: Color(0xFF00FF88),
-                            fontSize: 14,
-                            letterSpacing: 2)),
-                    const Text("Al-Mubarok Al-Arba'in",
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold)),
+                    const Text('PONDOK PESANTREN', style: TextStyle(color: Color(0xFF00FF88), fontSize: 14, letterSpacing: 2)),
+                    const Text("Al-Mubarok Al-Arba'in", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 24),
                     const Icon(Icons.lock, color: Colors.red, size: 80),
                     const SizedBox(height: 24),
-                    Text(
-                      _isSleep ? 'WAKTU ISTIRAHAT' : 'PERANGKAT DIBATASI',
-                      style: TextStyle(
-                          color: _isSleep ? Colors.blue : Colors.red,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold),
-                    ),
+                    Text(_isSleep ? 'WAKTU ISTIRAHAT' : 'PERANGKAT DIBATASI', style: TextStyle(color: _isSleep ? Colors.blue : Colors.red, fontSize: 24, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 12),
-                    const Text(
-                        'Hubungi pengurus pondok untuk membuka akses.',
-                        style: TextStyle(color: Colors.white54),
-                        textAlign: TextAlign.center),
+                    const Text('Hubungi pengurus pondok untuk membuka akses.', style: TextStyle(color: Colors.white54), textAlign: TextAlign.center),
                     const SizedBox(height: 32),
-                    Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          IconButton(
-                              icon: const Icon(Icons.phone,
-                                  color: Color(0xFF00FF88), size: 40),
-                              onPressed: () =>
-                                  launchUrl(Uri.parse('tel:'))),
-                          const SizedBox(width: 40),
-                          IconButton(
-                              icon: const Icon(Icons.camera_alt,
-                                  color: Color(0xFF00FF88), size: 40),
-                              onPressed: () => launchUrl(Uri.parse(
-                                  'market://launch?id=com.android.camera2'))),
-                        ]),
+                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      IconButton(icon: const Icon(Icons.phone, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('tel:'))),
+                      const SizedBox(width: 40),
+                      IconButton(icon: const Icon(Icons.camera_alt, color: Color(0xFF00FF88), size: 40), onPressed: () => launchUrl(Uri.parse('market://launch?id=com.android.camera2'))),
+                    ]),
                   ],
                 ),
               ),
@@ -389,7 +302,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
     }
 
-    // ---- LOST MODE ----
     if (_isLostMode) {
       return PopScope(
         canPop: false,
@@ -401,16 +313,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               children: [
                 const Icon(Icons.warning, color: Colors.orange, size: 80),
                 const SizedBox(height: 24),
-                const Text('MODE HILANG AKTIF',
-                    style: TextStyle(
-                        color: Colors.orange,
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold)),
+                const Text('MODE HILANG AKTIF', style: TextStyle(color: Colors.orange, fontSize: 24, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 12),
-                const Text(
-                    "HP ini milik Pondok Al-Arba'in, harap hubungi pengurus segera.",
-                    style: TextStyle(color: Colors.white54),
-                    textAlign: TextAlign.center),
+                const Text("HP ini milik Pondok Al-Arba'in, harap hubungi pengurus segera.", style: TextStyle(color: Colors.white54), textAlign: TextAlign.center),
               ],
             ),
           ),
@@ -423,78 +328,154 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       backgroundColor: const Color(0xFF0A0A0A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0A0A0A),
-        title: const Text('Arbain Agent',
-            style: TextStyle(
-                color: Color(0xFF00FF88), fontWeight: FontWeight.bold)),
+        elevation: 0,
+        title: Row(children: [
+          Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(color: const Color(0xFF00FF88).withValues(alpha: 0.15), borderRadius: BorderRadius.circular(8)),
+            child: const Icon(Icons.shield, color: Color(0xFF00FF88), size: 20),
+          ),
+          const SizedBox(width: 10),
+          const Text('Arbain Agent', style: TextStyle(color: Color(0xFF00FF88), fontWeight: FontWeight.bold, fontSize: 18)),
+        ]),
         actions: [
-          if (_isAlarmActive)
-            const Icon(Icons.notifications_active, color: Colors.red),
-          IconButton(
-              icon: const Icon(Icons.logout, color: Colors.white54),
-              onPressed: _requestLogout),
+          if (_isAlarmActive) const Icon(Icons.notifications_active, color: Colors.red),
+          IconButton(icon: const Icon(Icons.logout, color: Colors.white54), onPressed: _requestLogout),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Header santri info
+            if (_santriName.isNotEmpty)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFF003322), Color(0xFF001a11)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFF00FF88).withValues(alpha: 0.3)),
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(color: const Color(0xFF00FF88).withValues(alpha: 0.2), shape: BoxShape.circle),
+                    child: const Icon(Icons.person, color: Color(0xFF00FF88), size: 28),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(_santriName, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    if (_kamar.isNotEmpty) Text('Kamar $_kamar', style: const TextStyle(color: Colors.white54, fontSize: 13)),
+                    Text('PONPES AL-MUBAROK AL-ARBA\'IN', style: const TextStyle(color: Color(0xFF00FF88), fontSize: 10, letterSpacing: 1)),
+                  ]),
+                ]),
+              ),
+
+            // Status card
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(16),
+              margin: const EdgeInsets.only(bottom: 16),
               decoration: BoxDecoration(
                 color: const Color(0xFF111111),
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color:
-                        const Color(0xFF00FF88).withValues(alpha: 0.3)),
+                border: Border.all(color: const Color(0xFF00FF88).withValues(alpha: 0.2)),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Status Perangkat',
-                      style:
-                          TextStyle(color: Colors.white54, fontSize: 12)),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Container(
-                        width: 10,
-                        height: 10,
-                        decoration: BoxDecoration(
-                            color: _isTracking
-                                ? const Color(0xFF00FF88)
-                                : Colors.red,
-                            shape: BoxShape.circle)),
-                    const SizedBox(width: 8),
-                    Text(_status,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold)),
-                  ]),
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Icon(Icons.admin_panel_settings,
-                        color: _isAdminActive
-                            ? const Color(0xFF00FF88)
-                            : Colors.red,
-                        size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                        _isAdminActive
-                            ? 'Device Admin Aktif'
-                            : 'Device Admin Tidak Aktif',
-                        style: TextStyle(
-                            color: _isAdminActive
-                                ? const Color(0xFF00FF88)
-                                : Colors.red,
-                            fontSize: 13)),
-                  ]),
-                ],
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('STATUS PERANGKAT', style: TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 1.5)),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Container(width: 10, height: 10, decoration: BoxDecoration(color: _isTracking ? const Color(0xFF00FF88) : Colors.red, shape: BoxShape.circle)),
+                  const SizedBox(width: 8),
+                  Text(_status, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  Text('Sync: $_lastSync', style: const TextStyle(color: Colors.white38, fontSize: 12)),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Icon(Icons.admin_panel_settings, color: _isAdminActive ? const Color(0xFF00FF88) : Colors.red, size: 16),
+                  const SizedBox(width: 8),
+                  Text(_isAdminActive ? 'Device Admin Aktif' : 'Device Admin Tidak Aktif',
+                      style: TextStyle(color: _isAdminActive ? const Color(0xFF00FF88) : Colors.red, fontSize: 13)),
+                ]),
+              ]),
+            ),
+
+            // Grid menu
+            const Text('MENU', style: TextStyle(color: Colors.white38, fontSize: 11, letterSpacing: 1.5)),
+            const SizedBox(height: 10),
+            GridView.count(
+              crossAxisCount: 2,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 1.3,
+              children: [
+                _menuCard(Icons.sync, 'Sinkronisasi', 'Perbarui data app', const Color(0xFF00FF88), () async {
+                  setState(() => _status = 'Menyinkronkan...');
+                  await _startTracking();
+                }),
+                _menuCard(Icons.link, 'Hubungkan\nPerangkat', 'Pairing dengan pengurus', const Color(0xFF00AAFF), () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const PairingScreen()));
+                }),
+                _menuCard(Icons.apps, 'Aplikasi', 'Lihat app terinstall', const Color(0xFFFF9900), () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AppsScreen()));
+                }),
+                _menuCard(Icons.location_on, 'Lokasi', 'Kirim lokasi sekarang', const Color(0xFFFF4466), () async {
+                  setState(() => _status = 'Mengirim lokasi...');
+                  await _startTracking();
+                }),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            // Info pondok
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D0D0D),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white12),
               ),
+              child: Row(children: [
+                const Icon(Icons.info_outline, color: Colors.white24, size: 18),
+                const SizedBox(width: 10),
+                const Expanded(child: Text('Perangkat ini dikelola oleh Pengurus Pondok Pesantren Al-Mubarok Al-Arba\'in', style: TextStyle(color: Colors.white38, fontSize: 12))),
+              ]),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _menuCard(IconData icon, String title, String subtitle, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF111111),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withValues(alpha: 0.25)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(title, style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+            Text(subtitle, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+          ]),
+        ]),
       ),
     );
   }
