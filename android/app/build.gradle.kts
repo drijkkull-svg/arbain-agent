@@ -6,7 +6,7 @@
 }
 android {
     namespace = "com.example.arbain_agent"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -17,7 +17,7 @@ android {
     }
     defaultConfig {
         applicationId = "com.example.arbain_agent"
-        minSdk = flutter.minSdkVersion
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

@@ -10,6 +10,7 @@ import 'dart:async';
 import '../services/device_admin_service.dart';
 import '../services/schedule_service.dart';
 import '../services/auto_update_service.dart';
+import '../services/app_usage_service.dart';
 import '../services/geofence_service.dart';
 import 'login_screen.dart';
 import 'pairing_screen.dart';
@@ -58,6 +59,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _loadTodaySchedules();
     _loadAppUsage();
     _loadBattery();
+    AppUsageService.syncAppUsage();
+    Timer.periodic(const Duration(minutes: 30), (_) => AppUsageService.syncAppUsage());
     SharedPreferences.getInstance().then((prefs) => setState(() {
           _isSleep = prefs.getBool('is_sleep') ?? false;
           _isRestricted = prefs.getBool('is_restricted') ?? false;
@@ -111,12 +114,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (uid == null) return;
     _firestore.collection('notifications')
         .where('targetAll', isEqualTo: true)
-        .orderBy('createdAt', descending: true)
-        .limit(5)
+        .limit(20)
         .snapshots()
         .listen((snap) {
       if (!mounted) return;
-      final list = snap.docs.map((d) => {'id': d.id, ...d.data()}).toList();
+      final now = DateTime.now();
+      final list = snap.docs
+        .map((d) => {'id': d.id, ...d.data()})
+        .where((n) {
+          try {
+            final created = DateTime.parse(n['createdAt'].toString());
+            return now.difference(created).inHours < 24;
+          } catch (_) { return true; }
+        })
+        .toList();
       setState(() => _notifications = list);
     });
   }
@@ -432,10 +443,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           if (_notifications.isNotEmpty)
             Stack(children: [
               IconButton(icon: const Icon(Icons.notifications, color: Colors.white54), onPressed: _showNotifications),
-              Positioned(right: 8, top: 8, child: Container(
-                width: 8, height: 8,
-                decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-              )),
+              if (_notifications.any((n) => n['read'] != true))
+                Positioned(right: 8, top: 8, child: Container(
+                  width: 8, height: 8,
+                  decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                )),
             ]),
           IconButton(icon: const Icon(Icons.logout, color: Colors.white54), onPressed: _requestLogout),
         ],
@@ -660,6 +672,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   void _showNotifications() {
+    setState(() => _notifications = _notifications.map((n) => {...n, 'read': true}).toList());
     showModalBottomSheet(
       context: context,
       backgroundColor: const Color(0xFF111111),

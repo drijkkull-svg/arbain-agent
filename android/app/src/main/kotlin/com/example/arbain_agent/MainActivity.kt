@@ -89,6 +89,17 @@ class MainActivity : FlutterActivity() {
                     val minutes = ((stats?.find { it.packageName == pkg }?.totalTimeInForeground ?: 0L) / 1000 / 60).toInt()
                     result.success(minutes)
                 }
+                "getUsageStats" -> {
+                    val usm = getSystemService(Context.USAGE_STATS_SERVICE) as android.app.usage.UsageStatsManager
+                    val now = System.currentTimeMillis()
+                    val start = now - 24 * 60 * 60 * 1000
+                    val stats = usm.queryUsageStats(android.app.usage.UsageStatsManager.INTERVAL_DAILY, start, now)
+                    val list = stats
+                        ?.filter { it.totalTimeInForeground > 0 }
+                        ?.map { mapOf("packageName" to it.packageName, "totalMinutes" to (it.totalTimeInForeground / 1000 / 60).toInt()) }
+                        ?: listOf()
+                    result.success(list)
+                }
                 else -> result.notImplemented()
             }
         }
