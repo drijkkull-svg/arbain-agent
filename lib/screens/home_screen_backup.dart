@@ -591,7 +591,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.3,
             children: [
               _menuCard(Icons.sync, 'Sinkronisasi', 'Perbarui data app', const Color(0xFF00FF88), () async {
-                setState(() => _status = 'Menyinkronkan semua data...');
+                setState(() => _status = 'Menyinkronkan...');
                 await _startTracking();
                 await _loadTodaySchedules();
                 await _loadAppUsage();

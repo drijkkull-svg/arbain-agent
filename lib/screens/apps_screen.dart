@@ -6,106 +6,79 @@ import 'package:installed_apps/app_info.dart';
 
 class AppsScreen extends StatefulWidget {
   const AppsScreen({super.key});
-
   @override
   State<AppsScreen> createState() => _AppsScreenState();
 }
 
 class _AppsScreenState extends State<AppsScreen> {
   bool _isSyncing = false;
-  String _status = 'Belum disinkronkan';
-  int _appCount = 0;
+  List<AppInfo> _apps = [];
+  String _search = "";
 
   Future<void> _syncApps() async {
-    setState(() { _isSyncing = true; _status = 'Mengambil daftar aplikasi...'; });
+    setState(() => _isSyncing = true);
     try {
       List<AppInfo> apps = await InstalledApps.getInstalledApps(excludeSystemApps: true, withIcon: false);
       final uid = FirebaseAuth.instance.currentUser?.uid;
-      if (uid == null) return;
-
-      final appList = apps.map((app) => {
-        'name': app.name,
-        'packageName': app.packageName,
-        'versionName': app.versionName,
-        'installedAt': app.installedTimestamp,
-      }).toList();
-
-      await FirebaseFirestore.instance.collection('devices').doc(uid).update({
-        'installedApps': appList,
-        'appsSyncedAt': DateTime.now().toIso8601String(),
-      });
-
-      setState(() {
-        _appCount = apps.length;
-        _status = '${apps.length} aplikasi berhasil disinkronkan!';
-        _isSyncing = false;
-      });
+      if (uid != null) {
+        await FirebaseFirestore.instance.collection("devices").doc(uid).update({
+          "installedApps": apps.map((a) => {"name": a.name, "packageName": a.packageName, "versionName": a.versionName}).toList(),
+          "appsSyncedAt": DateTime.now().toIso8601String(),
+        });
+      }
+      setState(() { _apps = apps; _isSyncing = false; });
     } catch (e) {
-      setState(() { _status = 'Error: $e'; _isSyncing = false; });
+      setState(() => _isSyncing = false);
     }
   }
 
   @override
-  void initState() {
-    super.initState();
-    _syncApps();
-  }
+  void initState() { super.initState(); _syncApps(); }
 
   @override
   Widget build(BuildContext context) {
+    final filtered = _apps.where((a) => (a.name ?? "").toLowerCase().contains(_search.toLowerCase())).toList();
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF0A0A0A),
-        title: const Text('Sinkronisasi Aplikasi', style: TextStyle(color: Color(0xFF00FF88))),
+        title: Text("Aplikasi (${_apps.length})", style: const TextStyle(color: Color(0xFF00FF88), fontWeight: FontWeight.bold)),
         iconTheme: const IconThemeData(color: Colors.white),
+        actions: [IconButton(
+          icon: _isSyncing ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Color(0xFF00FF88), strokeWidth: 2)) : const Icon(Icons.sync, color: Color(0xFF00FF88)),
+          onPressed: _isSyncing ? null : _syncApps,
+        )],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: const Color(0xFF111111),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFF00FF88).withValues(alpha: 0.3)),
-              ),
-              child: Column(
-                children: [
-                  Icon(_isSyncing ? Icons.sync : Icons.check_circle,
-                    color: const Color(0xFF00FF88), size: 48),
-                  const SizedBox(height: 16),
-                  Text(_status, style: const TextStyle(color: Colors.white, fontSize: 16), textAlign: TextAlign.center),
-                  if (_appCount > 0) ...[
-                    const SizedBox(height: 8),
-                    Text('Total: $_appCount aplikasi', style: const TextStyle(color: Colors.white54, fontSize: 14)),
-                  ],
-                ],
-              ),
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: TextField(
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: "Cari aplikasi...",
+              hintStyle: const TextStyle(color: Colors.white38),
+              prefixIcon: const Icon(Icons.search, color: Colors.white38),
+              filled: true, fillColor: const Color(0xFF111111),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
             ),
-            const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: _isSyncing ? null : _syncApps,
-                icon: _isSyncing ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.black, strokeWidth: 2)) : const Icon(Icons.sync),
-                label: Text(_isSyncing ? 'Menyinkronkan...' : 'Sinkronkan Ulang'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00FF88),
-                  foregroundColor: Colors.black,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          ],
+            onChanged: (v) => setState(() => _search = v),
+          ),
         ),
-      ),
+        Expanded(child: _isSyncing && _apps.isEmpty
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF00FF88)))
+          : ListView.builder(
+              itemCount: filtered.length,
+              itemBuilder: (ctx, i) {
+                final app = filtered[i];
+                return ListTile(
+                  leading: Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.android, color: Color(0xFF00FF88), size: 24)),
+                  title: Text(app.name ?? "", style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+                  subtitle: Text(app.packageName ?? "", style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  trailing: Text(app.versionName ?? "", style: const TextStyle(color: Colors.white24, fontSize: 11)),
+                );
+              },
+            )),
+      ]),
     );
   }
 }
-
-
