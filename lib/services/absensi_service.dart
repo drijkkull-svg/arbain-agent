@@ -42,7 +42,11 @@ class AbsensiService {
         if (!days.contains(currentDay)) continue;
         final startMinutes = _timeToMinutes(data['startTime'] ?? '00:00');
         final endMinutes = _timeToMinutes(data['endTime'] ?? '00:00');
-        if (currentMinutes >= startMinutes && currentMinutes < endMinutes) {
+        final crossMidnight = endMinutes < startMinutes;
+        final inRange = crossMidnight
+            ? (currentMinutes >= startMinutes || currentMinutes < endMinutes)
+            : (currentMinutes >= startMinutes && currentMinutes < endMinutes);
+        if (inRange) {
           ngajiNow = true;
           if (!_isNgajiTime) {
             _isNgajiTime = true;
@@ -74,12 +78,12 @@ class AbsensiService {
       if (uid == null) return 'Tidak login';
 
       // Cek lokasi
-      final areaSnap = await _firestore.collection('settings').doc('absensi_area').get();
+      final areaSnap = await _firestore.collection('settings').doc('ngaji_location').get();
       final areaData = areaSnap.data();
       if (areaData == null) return 'Area ngaji belum diset';
 
-      final targetLat = (areaData['latitude'] as num).toDouble();
-      final targetLng = (areaData['longitude'] as num).toDouble();
+      final targetLat = (areaData['lat'] as num).toDouble();
+      final targetLng = (areaData['lng'] as num).toDouble();
       final radius = (areaData['radius'] as num).toDouble();
 
       final position = await Geolocator.getCurrentPosition(
