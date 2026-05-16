@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'home_screen.dart';
 
@@ -36,6 +37,12 @@ class _LoginScreenState extends State<LoginScreen> {
             'updatedAt': DateTime.now().toIso8601String(),
           });
         }
+      }
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken != null && user != null) {
+        await FirebaseFirestore.instance.collection('devices').doc(user.uid).set({
+          'fcmToken': fcmToken,
+        }, SetOptions(merge: true));
       }
       if (mounted) {
         Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomeScreen()));

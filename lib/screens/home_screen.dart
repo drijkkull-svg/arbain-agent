@@ -15,6 +15,8 @@ import '../services/geofence_service.dart';
 import 'login_screen.dart';
 import 'pairing_screen.dart';
 import 'apps_screen.dart';
+import 'profile_screen.dart';
+import 'attendance_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -606,6 +608,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               _menuCard(Icons.location_on, 'Lokasi', 'Kirim lokasi sekarang', const Color(0xFFFF4466), () async {
                 setState(() => _status = 'Mengirim lokasi...');
                 await _startTracking();
+              }),
+              _menuCard(Icons.person, 'Profil', 'Lihat & edit profil', const Color(0xFFAA00FF), () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen()));
+              }),
+              _menuCard(Icons.calendar_today, 'Absensi', 'Rekap kehadiran ngaji', const Color(0xFF00DDAA), () {
+                Navigator.push(context, MaterialPageRoute(builder: (_) => const AttendanceScreen()));
               }),
             ],
           ),
