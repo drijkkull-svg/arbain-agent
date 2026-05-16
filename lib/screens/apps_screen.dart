@@ -37,7 +37,7 @@ class _AppsScreenState extends State<AppsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _apps.where((a) => (a.name ?? "").toLowerCase().contains(_search.toLowerCase())).toList();
+    final filtered = _apps.where((a) => a.name.toLowerCase().contains(_search.toLowerCase())).toList();
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0A),
       appBar: AppBar(
@@ -72,9 +72,9 @@ class _AppsScreenState extends State<AppsScreen> {
                 final app = filtered[i];
                 return ListTile(
                   leading: Container(width: 40, height: 40, decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.android, color: Color(0xFF00FF88), size: 24)),
-                  title: Text(app.name ?? "", style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
-                  subtitle: Text(app.packageName ?? "", style: const TextStyle(color: Colors.white38, fontSize: 11)),
-                  trailing: Text(app.versionName ?? "", style: const TextStyle(color: Colors.white24, fontSize: 11)),
+                  title: Text(app.name, style: const TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w500)),
+                  subtitle: Text(app.packageName, style: const TextStyle(color: Colors.white38, fontSize: 11)),
+                  trailing: Text(app.versionName, style: const TextStyle(color: Colors.white24, fontSize: 11)),
                 );
               },
             )),

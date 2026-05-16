@@ -18,8 +18,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   Future<void> _loadAttendance() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return;
-    final now = DateTime.now();
-    final weekAgo = now.subtract(const Duration(days: 7));
+
+    
     try {
       final snap = await FirebaseFirestore.instance
         .collection('absensi')
