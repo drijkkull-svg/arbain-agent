@@ -1,7 +1,9 @@
 ﻿import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,6 +18,22 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
   String? _error;
+  String _version = '';
+
+  static const _bg = Color(0xFF070f07);
+  static const _green = Color(0xFF4ade80);
+  static const _card = Color(0xFF0d0d0d);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    if (mounted) setState(() => _version = info.version);
+  }
 
   Future<void> _login() async {
     setState(() { _isLoading = true; _error = null; });
@@ -54,112 +72,190 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _forgotPassword() async {
+    final emailController = TextEditingController(text: _emailController.text.trim());
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF0f0f0f),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Lupa Password', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Masukkan email kamu, kami akan kirim link reset password.', style: TextStyle(color: Colors.white54, fontSize: 13)),
+          const SizedBox(height: 16),
+          TextField(
+            controller: emailController,
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              hintText: 'nama@pondok.id',
+              hintStyle: const TextStyle(color: Color(0xFF2a4a2a), fontSize: 13),
+              prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF4a6e50), size: 18),
+              filled: true,
+              fillColor: const Color(0xFF0d0d0d),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF1a3a22))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _green, width: 1.5)),
+            ),
+          ),
+        ]),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Batal', style: TextStyle(color: Colors.white38)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              final email = emailController.text.trim();
+              if (email.isEmpty) return;
+              try {
+                await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Link reset password telah dikirim ke email kamu!'), backgroundColor: Color(0xFF16a34a)),
+                );
+              } catch (e) {
+                if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Email tidak ditemukan.'), backgroundColor: Colors.red),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF16a34a), foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), elevation: 0),
+            child: const Text('Kirim', style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF0A0A0A),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                const SizedBox(height: 40),
-                // LOGO
-                Container(
-                  width: 100, height: 100,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0D1F0D),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0xFF00FF88), width: 2),
-                    boxShadow: [BoxShadow(color: const Color(0xFF00FF88).withOpacity(0.3), blurRadius: 30, spreadRadius: 5)],
-                  ),
-                  child: const Icon(Icons.security, color: Color(0xFF00FF88), size: 52),
-                ),
-                const SizedBox(height: 24),
-                // NAMA APP
-                const Text('Arbain Agent', style: TextStyle(color: Color(0xFF00FF88), fontSize: 30, fontWeight: FontWeight.bold, letterSpacing: 1)),
-                const SizedBox(height: 6),
-                const Text('Sistem Monitoring Santri', style: TextStyle(color: Colors.white38, fontSize: 13, letterSpacing: 1)),
-                const SizedBox(height: 8),
-                // NAMA PONDOK
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00FF88).withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFF00FF88).withOpacity(0.3)),
-                  ),
-                  child: const Text('Pondok Pesantren Al-Mubarok Al-Arba\'in', style: TextStyle(color: Color(0xFF00FF88), fontSize: 11, fontWeight: FontWeight.w500, letterSpacing: 0.5), textAlign: TextAlign.center),
-                ),
-                const SizedBox(height: 48),
-                // EMAIL FIELD
-                TextField(
-                  controller: _emailController,
-                  style: const TextStyle(color: Colors.white),
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    labelStyle: const TextStyle(color: Colors.white38),
-                    prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF00FF88), size: 20),
-                    filled: true,
-                    fillColor: const Color(0xFF111111),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF222222))),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00FF88), width: 1.5)),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // PASSWORD FIELD
-                TextField(
-                  controller: _passwordController,
-                  obscureText: _obscurePassword,
-                  style: const TextStyle(color: Colors.white),
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    labelStyle: const TextStyle(color: Colors.white38),
-                    prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF00FF88), size: 20),
-                    suffixIcon: GestureDetector(
-                      onTap: () => setState(() => _obscurePassword = !_obscurePassword),
-                      child: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: Colors.white38, size: 20),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(statusBarColor: Colors.transparent, statusBarIconBrightness: Brightness.light),
+      child: Scaffold(
+        backgroundColor: _bg,
+        body: Container(
+          decoration: const BoxDecoration(
+            gradient: RadialGradient(
+              center: Alignment(0.8, -1.0),
+              radius: 1.2,
+              colors: [Color(0xFF0a2e12), _bg],
+            ),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const SizedBox(height: 32),
+                    Container(
+                      width: 72, height: 72,
+                      decoration: BoxDecoration(color: const Color(0xFF16a34a), borderRadius: BorderRadius.circular(22)),
+                      child: const Icon(Icons.shield, color: Colors.white, size: 40),
                     ),
-                    filled: true,
-                    fillColor: const Color(0xFF111111),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF222222))),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF00FF88), width: 1.5)),
-                  ),
-                ),
-                if (_error != null) ...[
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.red.withOpacity(0.3))),
-                    child: Row(children: [const Icon(Icons.error_outline, color: Colors.red, size: 16), const SizedBox(width: 8), Text(_error!, style: const TextStyle(color: Colors.red, fontSize: 13))]),
-                  ),
-                ],
-                const SizedBox(height: 28),
-                // TOMBOL MASUK
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _login,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00FF88),
-                      foregroundColor: Colors.black,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                      elevation: 0,
+                    const SizedBox(height: 18),
+                    const Text('Arbain Agent', style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.5)),
+                    const SizedBox(height: 6),
+                    const Text('SISTEM MONITORING SANTRI', style: TextStyle(color: Color(0xFF2a4a2a), fontSize: 10, letterSpacing: 2, fontWeight: FontWeight.w600)),
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF071f0f),
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: const Color(0xFF1a4a22)),
+                      ),
+                      child: const Text("Pondok Pesantren Al-Mubarok Al-Arba'in", style: TextStyle(color: Color(0xFF4ade80), fontSize: 10, fontWeight: FontWeight.w500)),
                     ),
-                    child: _isLoading
-                        ? const CircularProgressIndicator(color: Colors.black, strokeWidth: 2)
-                        : const Text('Masuk', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1)),
-                  ),
+                    const SizedBox(height: 44),
+                    Align(alignment: Alignment.centerLeft, child: const Text('EMAIL', style: TextStyle(color: Color(0xFF2a4a2a), fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.w700))),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _emailController,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: InputDecoration(
+                        hintText: 'nama@pondok.id',
+                        hintStyle: const TextStyle(color: Color(0xFF2a4a2a), fontSize: 13),
+                        prefixIcon: const Icon(Icons.email_outlined, color: Color(0xFF4a6e50), size: 18),
+                        filled: true,
+                        fillColor: _card,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF1a3a22))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _green, width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Align(alignment: Alignment.centerLeft, child: const Text('PASSWORD', style: TextStyle(color: Color(0xFF2a4a2a), fontSize: 10, letterSpacing: 1.5, fontWeight: FontWeight.w700))),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                      decoration: InputDecoration(
+                        hintText: '••••••••',
+                        hintStyle: const TextStyle(color: Color(0xFF2a4a2a), fontSize: 13),
+                        prefixIcon: const Icon(Icons.lock_outline, color: Color(0xFF4a6e50), size: 18),
+                        suffixIcon: GestureDetector(
+                          onTap: () => setState(() => _obscurePassword = !_obscurePassword),
+                          child: Icon(_obscurePassword ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: const Color(0xFF4a6e50), size: 18),
+                        ),
+                        filled: true,
+                        fillColor: _card,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF1a3a22))),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _green, width: 1.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: GestureDetector(
+                        onTap: _forgotPassword,
+                        child: const Text('Lupa Password?', style: TextStyle(color: Color(0xFF4ade80), fontSize: 12, fontWeight: FontWeight.w500)),
+                      ),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(color: const Color(0xFF1a0808), borderRadius: BorderRadius.circular(10), border: Border.all(color: const Color(0xFF3a1010))),
+                        child: Row(children: [
+                          const Icon(Icons.error_outline, color: Color(0xFFf87171), size: 16),
+                          const SizedBox(width: 8),
+                          Text(_error!, style: const TextStyle(color: Color(0xFFf87171), fontSize: 13)),
+                        ]),
+                      ),
+                    ],
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _login,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF16a34a),
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          elevation: 0,
+                        ),
+                        child: _isLoading
+                            ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                            : const Text('Masuk', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: 0.5)),
+                      ),
+                    ),
+                    const SizedBox(height: 44),
+                    const Text('Perangkat ini dikontrol oleh Tim Oraasis', style: TextStyle(color: Color(0xFF1a2a1a), fontSize: 11), textAlign: TextAlign.center),
+                    const SizedBox(height: 6),
+                    Text('v$_version', style: const TextStyle(color: Color(0xFF1a2a1a), fontSize: 11)),
+                  ],
                 ),
-                const SizedBox(height: 40),
-                const Text('Perangkat ini dikontrol oleh Tim Oraasis', style: TextStyle(color: Colors.white24, fontSize: 11), textAlign: TextAlign.center),
-              ],
+              ),
             ),
           ),
         ),
