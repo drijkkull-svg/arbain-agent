@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -15,11 +16,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isUploading = false;
   String? _photoUrl;
   String _name = '';
+  String _version = '';
 
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    final info = await PackageInfo.fromPlatform();
+    setState(() => _version = info.version);
   }
 
   Future<void> _loadProfile() async {
@@ -93,6 +101,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Text(_name, style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             Text(FirebaseAuth.instance.currentUser?.email ?? '', style: const TextStyle(color: Colors.white38, fontSize: 14)),
+            const SizedBox(height: 4),
+            Text('Versi $_version', style: const TextStyle(color: Colors.white24, fontSize: 12)),
             const SizedBox(height: 32),
             SizedBox(
               width: double.infinity,
