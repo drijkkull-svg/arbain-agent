@@ -81,7 +81,7 @@ class AppBlockerService {
       }
 
       // Merge: blocked manually + exceeded time limit
-      final allBlocked = {...blocked, ...timeLimitExceeded}.toList();
+      final allBlocked = {...blocked, ...timeLimitExceeded.map((p) => p.replaceAll("_", "."))}.toList();
 
       await _saveToSharedPrefs(allBlocked);
       if (allBlocked.isNotEmpty) {

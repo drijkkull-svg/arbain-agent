@@ -231,6 +231,27 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       });
       if (nowRestricted && !wasRestricted) _enterKioskMode();
       else if (!nowRestricted && wasRestricted) _exitKioskMode();
+      // Alarm
+      final wasAlarm = _isAlarmActive;
+      final nowAlarm = data['isAlarmActive'] ?? false;
+      final wasLost = _isLostMode;
+      final nowLost = data['isLostMode'] ?? false;
+      setState(() {
+        _isAlarmActive = nowAlarm;
+        _isLostMode = nowLost;
+      });
+      if (nowAlarm && !wasAlarm) {
+        try {
+          await const MethodChannel('com.example.arbain_agent/device_admin').invokeMethod('playAlarm');
+        } catch (e) { debugPrint('alarm error: $e'); }
+      } else if (!nowAlarm && wasAlarm) {
+        try {
+          await const MethodChannel('com.example.arbain_agent/device_admin').invokeMethod('stopAlarm');
+        } catch (e) { debugPrint('stop alarm error: $e'); }
+      }
+      if (nowLost && !wasLost) {
+        try { await _deviceAdmin.lockScreen(); } catch (e) {}
+      }
     });
   }
 
@@ -856,3 +877,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     );
   }
 }
+
+
+
+
+

@@ -1,5 +1,15 @@
 ﻿package com.example.arbain_agent
 import android.accessibilityservice.AccessibilityService
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraDevice
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.TotalCaptureResult
+import android.media.ImageReader
+import android.graphics.ImageFormat
+import android.os.HandlerThread
+import android.util.Base64
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
 import android.content.Intent
@@ -7,8 +17,9 @@ import android.os.Handler
 import android.os.Looper
 import android.view.accessibility.AccessibilityEvent
 import android.util.Log
-import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.auth.FirebaseAuth
 
 class ArbainAccessibilityService : AccessibilityService() {
 
@@ -21,6 +32,13 @@ class ArbainAccessibilityService : AccessibilityService() {
     private var lastResetDay: Int = -1
     private val handler = Handler(Looper.getMainLooper())
     private var sleepOverlayView: android.view.View? = null
+    private var lostOverlayView: android.view.View? = null
+    @Volatile private var isLostMode = false
+    @Volatile private var isAlarmActive = false
+    @Volatile private var lastPollMs = 0L
+    private var currentRingtone: android.media.Ringtone? = null
+    @Volatile private var lastSnapshotTs: String = ""
+    private var currentSnapshotCamera: CameraDevice? = null
     private var wasRestricted = false
     private var lastBlockedPackage = ""
     private var deviceListener: ListenerRegistration? = null
@@ -69,6 +87,53 @@ class ArbainAccessibilityService : AccessibilityService() {
                 handler.postDelayed({ lastBlockedPackage = "" }, 3000)
             }
             handler.postDelayed(this, 1000)
+                // Fast poll tiap 2 detik — HANYA saat alarm/lost mode aktif (hemat kuota)
+                val nowMs = System.currentTimeMillis()
+                val svc2 = this@ArbainAccessibilityService
+                val needsPoll = svc2.isAlarmActive || svc2.isLostMode
+                // Juga poll saat transisi: cek sekali tiap 20 detik buat deteksi aktivasi baru
+                val needsCheck = (nowMs - lastPollMs >= 5000)
+                if (needsPoll || needsCheck) {
+                    val interval = if (needsPoll) 2000L else 5000L
+                    if (nowMs - lastPollMs >= interval) {
+                        lastPollMs = nowMs
+                        val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                        if (uid != null) {
+                            com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                .collection("devices").document(uid).get()
+                                .addOnSuccessListener { doc ->
+                                    if (doc == null || !doc.exists()) return@addOnSuccessListener
+                                    val data = doc.data ?: return@addOnSuccessListener
+                                    val svc = this@ArbainAccessibilityService
+                                    // === ALARM ===
+                                    val isAlarm = data["isAlarmActive"] as? Boolean ?: false
+                                    if (isAlarm && !svc.isAlarmActive) {
+                                        svc.isAlarmActive = true
+                                        handler.post { playAlarm() }
+                                        Log.d("ArbainService", "poll: ALARM ON")
+                                    } else if (!isAlarm && svc.isAlarmActive) {
+                                        svc.isAlarmActive = false
+                                        handler.post { stopAlarm() }
+                                        Log.d("ArbainService", "poll: ALARM OFF")
+                                    }
+                                    // === LOST MODE ===
+                                    val isLost = data["isLostMode"] as? Boolean ?: false
+                                    if (isLost && !svc.isLostMode) {
+                                        svc.isLostMode = true
+                                        handler.post { showLostModeOverlay() }
+                                        Log.d("ArbainService", "poll: LOST MODE ON")
+                                    } else if (!isLost && svc.isLostMode) {
+                                        svc.isLostMode = false
+                                        handler.post { hideLostModeOverlay() }
+                                        Log.d("ArbainService", "poll: LOST MODE OFF")
+                                    }
+                                }
+                                .addOnFailureListener { e ->
+                                    Log.e("ArbainService", "poll error: ${e.message}")
+                                }
+                        }
+                    }
+                }
         }
     }
 
@@ -115,6 +180,36 @@ class ArbainAccessibilityService : AccessibilityService() {
                 prefs.edit().putBoolean("flutter.is_restricted", isRestricted).apply()
                 Log.d("ArbainService", "deviceListener: isRestricted=$isRestricted")
 
+                // isLostMode
+                val isLostMode = data["isLostMode"] as? Boolean ?: false
+                if (isLostMode && !this.isLostMode) {
+                    this.isLostMode = true
+                    handler.post { showLostModeOverlay() }
+                } else if (!isLostMode && this.isLostMode) {
+                    this.isLostMode = false
+                    handler.post { hideLostModeOverlay() }
+                }
+                this.isLostMode = isLostMode
+                // isAlarmActive
+                val isAlarm = data["isAlarmActive"] as? Boolean ?: false
+                if (isAlarm && !this.isAlarmActive) {
+                    this.isAlarmActive = true
+                    handler.post { playAlarm() }
+                } else if (!isAlarm && this.isAlarmActive) {
+                    this.isAlarmActive = false
+                    handler.post { stopAlarm() }
+                }
+                this.isAlarmActive = isAlarm
+
+                                // snapshotTrigger
+                val triggerMap = data["snapshotTrigger"] as? Map<*, *>
+                val triggerTs = triggerMap?.get("timestamp") as? String ?: ""
+                val triggerType = triggerMap?.get("type") as? String ?: "back"
+                if (triggerTs.isNotEmpty() && triggerTs != lastSnapshotTs) {
+                    lastSnapshotTs = triggerTs
+                    android.util.Log.d("ArbainService", "snapshotTrigger detected! type=$triggerType ts=$triggerTs")
+                    handler.post { takeSilentSnapshot(triggerType) }
+                }
                 // blockedApps
                 @Suppress("UNCHECKED_CAST")
                 val newApps = (data["blockedApps"] as? List<String> ?: emptyList()).toMutableSet()
@@ -127,7 +222,9 @@ class ArbainAccessibilityService : AccessibilityService() {
                 appTimeLimits.clear()
                 fun flattenMap(map: Map<String, Any>, prefix: String) {
                     map.forEach { (key, value) ->
-                        val fullKey = if (prefix.isEmpty()) key else "$prefix.$key"
+                        // konversi underscore ke dot untuk package name (level pertama)
+                        val normalizedKey = if (prefix.isEmpty()) key.replace("_", ".") else key
+                        val fullKey = if (prefix.isEmpty()) normalizedKey else "$prefix.$normalizedKey"
                         when (value) {
                             is Map<*, *> -> @Suppress("UNCHECKED_CAST") flattenMap(value as Map<String, Any>, fullKey)
                             is Long -> if (value > 0) appTimeLimits[fullKey] = value.toInt()
@@ -230,13 +327,17 @@ class ArbainAccessibilityService : AccessibilityService() {
     }
 
     private fun checkAndResetDaily() {
-        val today = java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_YEAR)
-        if (lastResetDay != today) {
+        val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
+        val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
+        val today = cal.get(java.util.Calendar.DAY_OF_YEAR)
+        // Reset jam 6 pagi
+        val resetDay = if (hour >= 6) today else today - 1
+        if (lastResetDay != resetDay) {
             appUsageToday.clear()
-            lastResetDay = today
+            lastResetDay = resetDay
             val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
             prefs.edit().putString("flutter.app_usage_today", "").apply()
-            Log.d("ArbainService", "Daily usage reset")
+            Log.d("ArbainService", "Daily usage reset at 6am")
         }
     }
 
@@ -380,6 +481,300 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
     }
 
+
+    private fun showLostModeOverlay() {
+        if (lostOverlayView != null) return
+        val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+        val params = android.view.WindowManager.LayoutParams(
+            android.view.WindowManager.LayoutParams.MATCH_PARENT,
+            android.view.WindowManager.LayoutParams.MATCH_PARENT,
+            android.view.WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
+            android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            android.graphics.PixelFormat.OPAQUE
+        )
+        val layout = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setBackgroundColor(android.graphics.Color.parseColor("#0A0A0A"))
+            setPadding(80, 0, 80, 0)
+        }
+        // Icon warning
+        android.widget.TextView(this).also { v ->
+            v.text = "⚠"
+            v.textSize = 64f
+            v.gravity = android.view.Gravity.CENTER
+            v.setTextColor(android.graphics.Color.parseColor("#FF8C00"))
+            v.setPadding(0, 0, 0, 24)
+            layout.addView(v)
+        }
+        android.widget.TextView(this).also { v ->
+            v.text = "MODE HILANG AKTIF"
+            v.textSize = 22f
+            v.setTypeface(null, android.graphics.Typeface.BOLD)
+            v.setTextColor(android.graphics.Color.parseColor("#FF8C00"))
+            v.gravity = android.view.Gravity.CENTER
+            v.letterSpacing = 0.1f
+            v.setPadding(0, 0, 0, 16)
+            layout.addView(v)
+        }
+        android.widget.TextView(this).also { v ->
+            v.text = "HP ini milik Pondok Al-Arbain, harap hubungi pengurus segera."
+            v.textSize = 14f
+            v.setTextColor(android.graphics.Color.parseColor("#888888"))
+            v.gravity = android.view.Gravity.CENTER
+            v.setPadding(0, 0, 0, 48)
+            layout.addView(v)
+        }
+        android.widget.TextView(this).also { v ->
+            v.text = "PONPES AL-MUBAROK AL-ARBA'IN"
+            v.textSize = 11f
+            v.setTypeface(null, android.graphics.Typeface.BOLD)
+            v.setTextColor(android.graphics.Color.parseColor("#333333"))
+            v.gravity = android.view.Gravity.CENTER
+            v.letterSpacing = 0.2f
+            layout.addView(v)
+        }
+        handler.post {
+            if (lostOverlayView == null) {
+                wm.addView(layout, params)
+                lostOverlayView = layout
+                layout.systemUiVisibility =
+                    android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                    android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                    android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                    android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            }
+        }
+    }
+
+    private fun takeSilentSnapshot(type: String) {
+        try {
+            val cameraManager = getSystemService(CAMERA_SERVICE) as CameraManager
+            val cameraList = cameraManager.cameraIdList
+            var targetId = cameraList[0]
+            for (id in cameraList) {
+                val chars = cameraManager.getCameraCharacteristics(id)
+                val facing = chars.get(CameraCharacteristics.LENS_FACING)
+                if (type == "front" && facing == CameraCharacteristics.LENS_FACING_FRONT) {
+                    targetId = id; break
+                } else if (type == "back" && facing == CameraCharacteristics.LENS_FACING_BACK) {
+                    targetId = id; break
+                }
+            }
+            // Cek orientasi sensor kamera
+            val chars = cameraManager.getCameraCharacteristics(targetId)
+            val sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+
+            val imageReader = ImageReader.newInstance(1920, 1080, ImageFormat.JPEG, 1)
+            val handlerThread = HandlerThread("ArbainSnapshot")
+            handlerThread.start()
+            val snapHandler = android.os.Handler(handlerThread.looper)
+
+            imageReader.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage()
+                if (image != null) {
+                    val buffer = image.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    image.close()
+                    val base64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                    uploadSnapshotToFirestore(base64, type)
+                    Log.d("ArbainService", "snapshot captured! type=$type size=${bytes.size}")
+                }
+                handlerThread.quitSafely()
+            }, snapHandler)
+
+            val stateCallback = object : CameraDevice.StateCallback() {
+                override fun onOpened(camera: CameraDevice) {
+                    currentSnapshotCamera = camera
+                    val isFront = type == "front"
+
+                    if (isFront) {
+                        // Kamera depan: pakai SurfaceTexture preview biar AE settle
+                        val surfaceTexture = android.graphics.SurfaceTexture(10)
+                        surfaceTexture.setDefaultBufferSize(640, 480)
+                        val previewSurface = android.view.Surface(surfaceTexture)
+
+                        camera.createCaptureSession(
+                            listOf(previewSurface, imageReader.surface),
+                            object : CameraCaptureSession.StateCallback() {
+                                override fun onConfigured(session: CameraCaptureSession) {
+                                    val previewRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                                    previewRequest.addTarget(previewSurface)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE,
+                                        android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE,
+                                        android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE,
+                                        android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE,
+                                        android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                                    session.setRepeatingRequest(previewRequest.build(), null, snapHandler)
+
+                                    snapHandler.postDelayed({
+                                        try { session.stopRepeating() } catch (e: Exception) {}
+                                        val captureRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                                        captureRequest.addTarget(imageReader.surface)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_ORIENTATION, sensorOrientation)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_QUALITY, 90.toByte())
+                                        session.capture(captureRequest.build(), object : CameraCaptureSession.CaptureCallback() {
+                                            override fun onCaptureCompleted(s: CameraCaptureSession, r: CaptureRequest, res: TotalCaptureResult) {
+                                                camera.close()
+                                                currentSnapshotCamera = null
+                                                try { previewSurface.release() } catch (e: Exception) {}
+                                                try { surfaceTexture.release() } catch (e: Exception) {}
+                                            }
+                                        }, snapHandler)
+                                    }, 2000)
+                                }
+                                override fun onConfigureFailed(session: CameraCaptureSession) {
+                                    camera.close()
+                                    currentSnapshotCamera = null
+                                    Log.e("ArbainService", "front snapshot config failed")
+                                }
+                            }, snapHandler
+                        )
+                    } else {
+                        // Kamera belakang: Samsung-compatible, langsung STILL_CAPTURE tanpa preview
+                        // Preview di Samsung Galaxy kadang timeout dari background service
+                        camera.createCaptureSession(
+                            listOf(imageReader.surface),
+                            object : CameraCaptureSession.StateCallback() {
+                                override fun onConfigured(session: CameraCaptureSession) {
+                                    // Delay 1500ms biar sensor warmup
+                                    snapHandler.postDelayed({
+                                        val captureRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                                        captureRequest.addTarget(imageReader.surface)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_ORIENTATION, sensorOrientation)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                                        // AF off + focus infinity biar langsung capture tanpa nunggu AF
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE,
+                                            android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_OFF)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_QUALITY, 90.toByte())
+                                        session.capture(captureRequest.build(), object : CameraCaptureSession.CaptureCallback() {
+                                            override fun onCaptureCompleted(s: CameraCaptureSession, r: CaptureRequest, res: TotalCaptureResult) {
+                                                camera.close()
+                                                currentSnapshotCamera = null
+                                                Log.d("ArbainService", "rear snapshot captured!")
+                                            }
+                                            override fun onCaptureFailed(s: CameraCaptureSession, r: CaptureRequest, failure: android.hardware.camera2.CaptureFailure) {
+                                                camera.close()
+                                                currentSnapshotCamera = null
+                                                Log.e("ArbainService", "rear snapshot capture failed: ${failure.reason}")
+                                            }
+                                        }, snapHandler)
+                                    }, 1500)
+                                }
+                                override fun onConfigureFailed(session: CameraCaptureSession) {
+                                    camera.close()
+                                    currentSnapshotCamera = null
+                                    Log.e("ArbainService", "rear snapshot config failed")
+                                }
+                            }, snapHandler
+                        )
+                    }
+                }
+
+                override fun onDisconnected(camera: CameraDevice) {
+                    camera.close()
+                    currentSnapshotCamera = null
+                }
+                override fun onError(camera: CameraDevice, error: Int) {
+                    camera.close()
+                    currentSnapshotCamera = null
+                    Log.e("ArbainService", "snapshot camera error: $error")
+                }
+            }
+
+            if (checkSelfPermission(android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                try { currentSnapshotCamera?.close(); currentSnapshotCamera = null } catch (e: Exception) {}
+                Thread.sleep(300)
+                cameraManager.openCamera(targetId, stateCallback, snapHandler)
+            } else {
+                Log.e("ArbainService", "snapshot: no camera permission")
+            }
+        } catch (e: Exception) {
+            Log.e("ArbainService", "takeSilentSnapshot error: ${e.message}")
+        }
+    }
+
+    private fun uploadSnapshotToFirestore(base64: String, type: String) {
+        try {
+            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            val uid = auth.currentUser?.uid ?: return@uploadSnapshotToFirestore
+            db.collection("devices").document(uid).update(
+                mapOf(
+                    "lastSnapshot" to mapOf(
+                        "image" to base64,
+                        "type" to type,
+                        "timestamp" to com.google.firebase.Timestamp.now()
+                    )
+                )
+            ).addOnSuccessListener {
+                Log.d("ArbainService", "snapshot uploaded to Firestore!")
+            }.addOnFailureListener { e ->
+                Log.e("ArbainService", "snapshot upload failed: ${e.message}")
+            }
+        } catch (e: Exception) {
+            Log.e("ArbainService", "uploadSnapshot error: ${e.message}")
+        }
+    }
+
+    private fun playAlarm() {
+        try {
+            val audioManager = getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            audioManager.setStreamVolume(android.media.AudioManager.STREAM_ALARM, audioManager.getStreamMaxVolume(android.media.AudioManager.STREAM_ALARM), 0)
+            val alarmUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+                ?: android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_RINGTONE)
+            val ringtone = android.media.RingtoneManager.getRingtone(applicationContext, alarmUri)
+            ringtone.play()
+            currentRingtone = ringtone
+            Log.d("ArbainService", "playAlarm: started")
+        } catch (e: Exception) {
+            Log.e("ArbainService", "playAlarm error: ${e.message}")
+        }
+    }
+
+    private fun stopAlarm() {
+        try {
+            currentRingtone?.stop()
+            currentRingtone = null
+            Log.d("ArbainService", "stopAlarm: stopped")
+        } catch (e: Exception) {
+            Log.e("ArbainService", "stopAlarm error: ${e.message}")
+        }
+    }
+
+    private fun hideLostModeOverlay() {
+        val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
+        handler.post {
+            lostOverlayView?.let {
+                try { wm.removeView(it) } catch (e: Exception) {}
+                lostOverlayView = null
+            }
+        }
+    }
+
     private fun hideSleepOverlay() {
         val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
         handler.post { sleepOverlayView?.let { try { wm.removeView(it) } catch (e: Exception) {}; sleepOverlayView = null } }
@@ -409,3 +804,7 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
+
+
+
+

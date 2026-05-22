@@ -3,11 +3,15 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.media.RingtoneManager
+import android.media.Ringtone
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val CHANNEL = "com.example.arbain_agent/device_admin"
+    private var currentCamera: android.hardware.camera2.CameraDevice? = null
     private lateinit var devicePolicyManager: DevicePolicyManager
     private lateinit var adminComponent: ComponentName
     private lateinit var appBlocker: AppBlockerService
@@ -100,12 +104,75 @@ class MainActivity : FlutterActivity() {
                         ?: listOf()
                     result.success(list)
                 }
+                                "playAlarm" -> {
+                    try {
+                        val alarmUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                        val ringtone = RingtoneManager.getRingtone(applicationContext, alarmUri)
+                        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        audioManager.setStreamVolume(AudioManager.STREAM_ALARM, audioManager.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0)
+                        ringtone.play()
+                        // Simpan referensi buat stop
+                        MainActivity.currentRingtone = ringtone
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "stopAlarm" -> {
+                    try {
+                        MainActivity.currentRingtone?.stop()
+                        MainActivity.currentRingtone = null
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "blockUninstall" -> {
+                    try {
+                        if (devicePolicyManager.isAdminActive(adminComponent)) {
+                            devicePolicyManager.setUninstallBlocked(adminComponent, packageName, true)
+                            result.success(true)
+                        } else {
+                            result.success(false)
+                        }
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "unblockUninstall" -> {
+                    try {
+                        if (devicePolicyManager.isAdminActive(adminComponent)) {
+                            devicePolicyManager.setUninstallBlocked(adminComponent, packageName, false)
+                            result.success(true)
+                        } else {
+                            result.success(false)
+                        }
+                    } catch (e: Exception) {
+                        result.error("ERROR", e.message, null)
+                    }
+                }
+                "isUninstallBlocked" -> {
+                    try {
+                        if (devicePolicyManager.isAdminActive(adminComponent)) {
+                            result.success(devicePolicyManager.isUninstallBlocked(adminComponent, packageName))
+                        } else {
+                            result.success(false)
+                        }
+                    } catch (e: Exception) {
+                        result.success(false)
+                    }
+                }
+                "takeSnapshot" -> {
+                    val type = call.argument<String>("type") ?: "front"
+                    takeSilentSnapshot(type, result)
+                }
                 else -> result.notImplemented()
             }
         }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "com.example.arbain_agent/permissions").setMethodCallHandler { call, result ->
             when (call.method) {
-                "hasOverlayPermission" -> result.success(android.provider.Settings.canDrawOverlays(this))
+"hasOverlayPermission" -> result.success(android.provider.Settings.canDrawOverlays(this))
                 "openOverlaySettings" -> {
                     startActivity(android.content.Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName")).apply { flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK })
                     result.success(true)
@@ -126,6 +193,81 @@ class MainActivity : FlutterActivity() {
             }
         }
     }
+
+    companion object {
+        var currentRingtone: Ringtone? = null
+    }
+
+
+    private fun takeSilentSnapshot(type: String, result: MethodChannel.Result) {
+        try {
+            val cameraManager = getSystemService(CAMERA_SERVICE) as android.hardware.camera2.CameraManager
+            val cameraList = cameraManager.cameraIdList
+            var targetId = cameraList[0]
+            for (id in cameraList) {
+                val chars = cameraManager.getCameraCharacteristics(id)
+                val facing = chars.get(android.hardware.camera2.CameraCharacteristics.LENS_FACING)
+                if (type == "front" && facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_FRONT) {
+                    targetId = id; break
+                } else if (type == "back" && facing == android.hardware.camera2.CameraCharacteristics.LENS_FACING_BACK) {
+                    targetId = id; break
+                }
+            }
+            val outputFile = java.io.File(cacheDir, "snapshot_${System.currentTimeMillis()}.jpg")
+            val imageReader = android.media.ImageReader.newInstance(640, 480, android.graphics.ImageFormat.JPEG, 1)
+            val handlerThread = android.os.HandlerThread("CameraSnapshot")
+            handlerThread.start()
+            val handler = android.os.Handler(handlerThread.looper)
+            imageReader.setOnImageAvailableListener({ reader ->
+                val image = reader.acquireLatestImage()
+                if (image != null) {
+                    val buffer = image.planes[0].buffer
+                    val bytes = ByteArray(buffer.remaining())
+                    buffer.get(bytes)
+                    outputFile.writeBytes(bytes)
+                    image.close()
+                    runOnUiThread { result.success(outputFile.absolutePath) }
+                } else {
+                    runOnUiThread { result.error("NO_IMAGE", "No image captured", null) }
+                }
+                handlerThread.quitSafely()
+            }, handler)
+            val stateCallback = object : android.hardware.camera2.CameraDevice.StateCallback() {
+                override fun onOpened(camera: android.hardware.camera2.CameraDevice) {
+                        currentCamera = camera
+                    val captureRequest = camera.createCaptureRequest(android.hardware.camera2.CameraDevice.TEMPLATE_STILL_CAPTURE)
+                    captureRequest.addTarget(imageReader.surface)
+                    camera.createCaptureSession(listOf(imageReader.surface), object : android.hardware.camera2.CameraCaptureSession.StateCallback() {
+                        override fun onConfigured(session: android.hardware.camera2.CameraCaptureSession) {
+                            session.capture(captureRequest.build(), object : android.hardware.camera2.CameraCaptureSession.CaptureCallback() {
+                                override fun onCaptureCompleted(s: android.hardware.camera2.CameraCaptureSession, r: android.hardware.camera2.CaptureRequest, res: android.hardware.camera2.TotalCaptureResult) {
+                                    camera.close()
+                                }
+                            }, handler)
+                        }
+                        override fun onConfigureFailed(session: android.hardware.camera2.CameraCaptureSession) {
+                            camera.close()
+                            runOnUiThread { result.error("CONFIG_FAILED", "Camera config failed", null) }
+                        }
+                    }, handler)
+                }
+                override fun onDisconnected(camera: android.hardware.camera2.CameraDevice) { camera.close(); currentCamera = null }
+                override fun onError(camera: android.hardware.camera2.CameraDevice, error: Int) {
+                    camera.close()
+                    currentCamera = null
+                    runOnUiThread { result.error("CAMERA_ERROR", "Camera error: $error", null) }
+                }
+            }
+            if (androidx.core.app.ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                try { currentCamera?.close(); currentCamera = null } catch (e: Exception) {}
+                Thread.sleep(300) // tunggu kamera benar-benar tertutup
+                cameraManager.openCamera(targetId, stateCallback, handler)
+            } else {
+                result.error("NO_PERMISSION", "Camera permission not granted", null)
+            }
+        } catch (e: Exception) {
+            result.error("EXCEPTION", e.message, null)
+        }
+    }
+
 }
-
-

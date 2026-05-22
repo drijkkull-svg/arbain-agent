@@ -153,3 +153,6 @@ flutter_native_splash:
     image: assets/icons/logo_splash.png
     image_padding_percent: 30
 
+
+  record: ^5.1.2
+  firebase_storage: ^12.3.4

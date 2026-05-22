@@ -32,6 +32,30 @@ class DeviceAdminService {
       await _channel.invokeMethod('clearPin');
     } catch (e) { /* handled */ }
   }
+  Future<bool> blockUninstall() async {
+    try {
+      return await _channel.invokeMethod('blockUninstall') ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> unblockUninstall() async {
+    try {
+      return await _channel.invokeMethod('unblockUninstall') ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  Future<bool> isUninstallBlocked() async {
+    try {
+      return await _channel.invokeMethod('isUninstallBlocked') ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
   void listenLockCommand() {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
